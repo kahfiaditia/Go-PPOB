@@ -1,0 +1,7 @@
+.env
+.env.*
+!.env.example
+
+go.work
+.DS_Store
+.vscode/
