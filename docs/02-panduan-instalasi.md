@@ -10,8 +10,8 @@
 
 1. **Clone repository**
    ```bash
-   git clone <URL-REPOSITORY>
-   cd pulsa_go
+   git clone https://github.com/kahfiaditia/Go-PPOB.git
+   cd Go-PPOB
    ```
 
 2. **Siapkan konfigurasi**
@@ -22,6 +22,12 @@
    Edit `.env` dengan kredensial MySQL lokal. `JWT_SECRET` wajib minimal 32
    karakter; gunakan nilai acak milik sendiri. Nilai seed di contoh hanya untuk
    pembelajaran lokal dan wajib diganti sebelum deployment.
+
+   Buat secret acak menggunakan:
+   ```bash
+   openssl rand -hex 32
+   ```
+   Salin hasilnya ke nilai `JWT_SECRET` di `.env`.
 
 3. **Buat skema database**
    ```bash
