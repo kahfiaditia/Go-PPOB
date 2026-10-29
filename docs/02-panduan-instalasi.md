@@ -21,7 +21,8 @@
   DB_NAME=pulsa_db
   JWT_SECRET=buat-string-random-minimal-32-karakter
 
-  //cara buat di terminal ketik openssl rand -hex 32
+  //cara buat di terminal ketik openssl rand -hex 32 atau
+  echo "JWT_SECRET=$(openssl rand -hex 32)" >> .env
 
 ## Install Dependencies
 
