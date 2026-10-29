@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -108,7 +109,7 @@ func main() {
 
 	// --- Graceful shutdown ---
 	srv := &http.Server{
-		Addr:         ":" + cfg.AppPort,
+		Addr:         net.JoinHostPort(cfg.AppHost, cfg.AppPort),
 		Handler:      r,
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 15 * time.Second,
@@ -116,7 +117,7 @@ func main() {
 	}
 
 	go func() {
-		util.Log.Infof("[MAIN] server starting on :%s (env=%s)", cfg.AppPort, cfg.AppEnv)
+		util.Log.Infof("[MAIN] server starting on %s (env=%s)", srv.Addr, cfg.AppEnv)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			util.Log.Fatal("[MAIN] server error: ", err)
 		}

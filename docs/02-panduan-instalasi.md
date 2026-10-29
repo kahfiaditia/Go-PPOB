@@ -55,7 +55,15 @@
    ```
 
    Periksa server di `http://localhost:8080/health`. Respons health berisi
-   status server dan panjang antrean worker.
+   status server dan panjang antrean worker. Secara default aplikasi hanya
+   mendengarkan pada `127.0.0.1` agar HTTP tidak terbuka ke jaringan.
+
+   Untuk deployment, letakkan aplikasi di belakang reverse proxy yang
+   mengaktifkan HTTPS/TLS. Proxy pada host yang sama dapat meneruskan request
+   ke `127.0.0.1:8080`. Jika proxy berjalan di host/container lain, atur
+   `APP_HOST` ke alamat interface privat yang dapat dijangkau proxy dan batasi
+   akses ke port aplikasi melalui firewall atau konfigurasi jaringan. Jangan
+   mengekspos listener HTTP aplikasi langsung ke internet.
 
 ## Kredensial demo lokal
 
