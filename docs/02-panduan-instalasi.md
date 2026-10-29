@@ -10,7 +10,7 @@
 
 1. **Clone Repository**
    ```bash
-   git clone https://github.com/username-anda/pulsa-backend.git
+   git clone https://github.com/kahfiaditia/pulsa-backend.git
    cd pulsa-backend
    ```
 
