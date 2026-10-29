@@ -43,17 +43,39 @@ func (r *AgentRepository) FindByUsername(ctx context.Context, username string) (
 
 func (r *AgentRepository) FindByID(ctx context.Context, id int64) (*model.Agent, error) {
 	q := `SELECT id, username, password_hash, COALESCE(pin_hash, ''), name, COALESCE(email,''), 
-	         COALESCE(phone,''), balance, COALESCE(callback_url,''), is_active, created_at
+	         COALESCE(phone,''), balance, COALESCE(callback_url,''), COALESCE(callback_secret,''), is_active, created_at
 	      FROM agents WHERE id = ? LIMIT 1`
 	var a model.Agent
 	err := r.db.QueryRowContext(ctx, q, id).Scan(
 		&a.ID, &a.Username, &a.PasswordHash, &a.PinHash, &a.Name, &a.Email, &a.Phone,
-		&a.Balance, &a.CallbackURL, &a.IsActive, &a.CreatedAt,
+		&a.Balance, &a.CallbackURL, &a.CallbackSecret, &a.IsActive, &a.CreatedAt,
 	)
 	if err == sql.ErrNoRows {
 		return nil, ErrNotFound
 	}
 	return &a, err
+}
+
+func (r *AgentRepository) SetCallbackSecret(ctx context.Context, agentID int64, secret string) error {
+	result, err := r.db.ExecContext(ctx,
+		`UPDATE agents SET callback_secret = ? WHERE id = ?`, secret, agentID)
+	if err != nil {
+		return err
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rowsAffected == 0 {
+		var exists bool
+		if err := r.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM agents WHERE id = ?)`, agentID).Scan(&exists); err != nil {
+			return err
+		}
+		if !exists {
+			return ErrNotFound
+		}
+	}
+	return nil
 }
 
 // GetBalanceForUpdate — HARUS dipanggil dalam DB transaction

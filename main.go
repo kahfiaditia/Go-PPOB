@@ -101,6 +101,7 @@ func main() {
 		admin.GET("/agents", adminHandler.ListAgents)
 		admin.GET("/transactions", adminHandler.ListTransactions)
 		admin.PATCH("/agents/:id/pin", adminHandler.SetAgentPIN)
+		admin.POST("/agents/:id/callback-secret", adminHandler.RotateAgentCallbackSecret)
 		admin.GET("/products", productHandler.ListForAdmin)
 		admin.POST("/products", productHandler.Create)
 		admin.PATCH("/products/:id", productHandler.Update)

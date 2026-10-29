@@ -3,10 +3,14 @@ package service
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"net/http"
+	"strconv"
 	"time"
 
 	"pulsa-backend/repository"
@@ -60,6 +64,13 @@ func (s *CallbackService) sendWithRetry(agentID int64, payload CallbackPayload) 
 		util.Log.Debugf("[CALLBACK] skip tx=%s: no callback_url", payload.TxID)
 		return
 	}
+	if agent.CallbackSecret == "" {
+		util.Log.Errorf("[CALLBACK] cannot send tx=%s: callback secret is not configured for agent=%d", payload.TxID, agentID)
+		if markErr := s.txRepo.MarkCallback(ctx, payload.TxID, "FAILED", 0); markErr != nil {
+			util.Log.Errorf("[CALLBACK] failed to mark callback tx=%s: %v", payload.TxID, markErr)
+		}
+		return
+	}
 
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -77,6 +88,9 @@ func (s *CallbackService) sendWithRetry(agentID int64, payload CallbackPayload) 
 			return
 		}
 		req.Header.Set("Content-Type", "application/json")
+		timestamp := strconv.FormatInt(time.Now().Unix(), 10)
+		req.Header.Set("X-Callback-Timestamp", timestamp)
+		req.Header.Set("X-Callback-Signature", "sha256="+callbackSignature(agent.CallbackSecret, timestamp, body))
 
 		resp, err := s.httpClient.Do(req)
 		httpStatus := 0
@@ -123,4 +137,11 @@ func (s *CallbackService) sendWithRetry(agentID int64, payload CallbackPayload) 
 		util.Log.Errorf("[CALLBACK] failed to mark callback failure tx=%s: %v", payload.TxID, err)
 	}
 	util.Log.Errorf("[CALLBACK] gave up tx=%s after %d attempts", payload.TxID, s.maxRetry)
+}
+
+func callbackSignature(secret, timestamp string, body []byte) string {
+	mac := hmac.New(sha256.New, []byte(secret))
+	_, _ = mac.Write([]byte(timestamp + "."))
+	_, _ = mac.Write(body)
+	return hex.EncodeToString(mac.Sum(nil))
 }

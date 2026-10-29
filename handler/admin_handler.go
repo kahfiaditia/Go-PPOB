@@ -1,6 +1,9 @@
 package handler
 
 import (
+	"crypto/rand"
+	"encoding/base64"
+	"errors"
 	"strconv"
 
 	"pulsa-backend/repository"
@@ -109,4 +112,38 @@ func (h *AdminHandler) SetAgentPIN(c *gin.Context) {
 		return
 	}
 	util.OK(c, "agent PIN updated", gin.H{"agent_id": agentID})
+}
+
+func (h *AdminHandler) RotateAgentCallbackSecret(c *gin.Context) {
+	if c.GetString("admin_role") != "superadmin" {
+		util.Forbidden(c, "superadmin access only")
+		return
+	}
+
+	agentID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || agentID <= 0 {
+		util.BadRequest(c, "invalid agent id")
+		return
+	}
+
+	randomSecret := make([]byte, 32)
+	if _, err := rand.Read(randomSecret); err != nil {
+		util.Log.Errorf("[ADMIN] callback secret generation error agent=%d: %v", agentID, err)
+		util.InternalError(c, "failed to generate callback secret")
+		return
+	}
+	secret := base64.RawURLEncoding.EncodeToString(randomSecret)
+
+	if err := h.agentRepo.SetCallbackSecret(c.Request.Context(), agentID, secret); err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			util.NotFound(c, "agent not found")
+			return
+		}
+		util.Log.Errorf("[ADMIN] callback secret update error agent=%d: %v", agentID, err)
+		util.InternalError(c, "failed to update callback secret")
+		return
+	}
+
+	util.OK(c, "callback secret rotated; store it securely because it will not be shown again",
+		gin.H{"agent_id": agentID, "callback_secret": secret})
 }

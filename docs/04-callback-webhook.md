@@ -26,12 +26,37 @@ Sistem Distributor akan mengirim data dengan format **JSON**.
 
 ```http
 Content-Type: application/json
+X-Callback-Timestamp: 1793311200
+X-Callback-Signature: sha256=<64 karakter hex>
 ```
 
-Callback pada versi belajar ini tidak ditandatangani. Jangan menganggap request
-callback sebagai bukti autentikasi; gunakan callback hanya sebagai notifikasi,
-lalu cocokkan status transaksi melalui API yang terautentikasi. Secret callback
-per agent belum tersedia.
+Setiap agen memiliki secret callback sendiri. Superadmin membuat atau merotasi
+secret melalui:
+
+```http
+POST /api/admin/agents/{id}/callback-secret
+Authorization: Bearer <admin-jwt>
+```
+
+Nilai `data.callback_secret` hanya ditampilkan pada respons rotasi tersebut.
+Simpan di secret manager milik penerima; rotasi secret membuat signature lama
+tidak lagi valid. Setelah perubahan skema, agen lama belum mempunyai secret dan
+callback tidak akan dikirim sampai secret dibuat.
+
+Signature adalah HMAC-SHA256 menggunakan teks secret sebagai key, dengan pesan
+persis `timestamp + "." + raw_request_body`. Digest dikodekan sebagai hex
+lowercase dan diberi awalan `sha256=`. Penerima harus:
+
+1. Memastikan timestamp berupa Unix seconds dan berbeda dari waktu server tidak
+   lebih dari 5 menit.
+2. Menghitung ulang HMAC atas timestamp dan byte body mentah, lalu
+   membandingkannya dengan `hmac.Equal` (jangan memakai perbandingan string
+   biasa).
+3. Menolak signature/timestamp tidak valid sebelum memproses payload, serta
+   memproses `tx_id` secara idempoten untuk menghindari efek ganda pada retry.
+
+Timestamp dan signature baru dibuat pada setiap percobaan pengiriman. Jangan
+mencatat atau membagikan secret callback.
 
 Contoh payload:
 
@@ -46,3 +71,8 @@ Contoh payload:
   "timestamp": "2026-10-29T14:00:00Z"
 }
 ```
+
+Untuk database yang sudah ada, jalankan
+`database/migrations/20261029_add_agent_callback_secret.sql` sebelum
+menjalankan versi aplikasi ini. Database baru memperoleh kolom tersebut dari
+`database/migration.sql`.
