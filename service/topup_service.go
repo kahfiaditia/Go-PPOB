@@ -15,12 +15,14 @@ import (
 )
 
 var (
-	ErrProductNotFound = errors.New("product not found")
-	ErrInsufficient    = errors.New("insufficient balance")
-	ErrAgentInactive   = errors.New("agent is inactive")
-	ErrPINNotSet       = errors.New("transaction PIN is not set")
-	ErrPINIncorrect    = errors.New("transaction PIN is incorrect")
-	ErrPINLocked       = errors.New("transaction PIN is temporarily locked")
+	ErrProductNotFound     = errors.New("product not found")
+	ErrInsufficient        = errors.New("insufficient balance")
+	ErrAgentInactive       = errors.New("agent is inactive")
+	ErrPINNotSet           = errors.New("transaction PIN is not set")
+	ErrPINIncorrect        = errors.New("transaction PIN is incorrect")
+	ErrPINLocked           = errors.New("transaction PIN is temporarily locked")
+	ErrProfitBelowDefault  = errors.New("transaction profit cannot be lower than the product default")
+	ErrInvalidProductPrice = errors.New("invalid product price configuration")
 )
 
 type TopupService struct {
@@ -38,7 +40,7 @@ func NewTopupService(db *sql.DB, ar *repository.AgentRepository, pr *repository.
 }
 
 // CreatePending — dipanggil handler (cepat), hanya insert ke DB
-func (s *TopupService) CreatePending(ctx context.Context, agentID int64, productID, customerNo, pin string) (*model.Transaction, error) {
+func (s *TopupService) CreatePending(ctx context.Context, agentID int64, productID, customerNo, pin string, requestedProfit *float64) (*model.Transaction, error) {
 	prod, err := s.productRepo.FindByID(ctx, productID)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
@@ -68,7 +70,10 @@ func (s *TopupService) CreatePending(ctx context.Context, agentID int64, product
 		}
 	}
 
-	sellPrice := prod.BasePrice + prod.DefaultMarkup
+	sellPrice, profit, err := calculateTopupPrice(prod.Price, prod.HargaJual, requestedProfit)
+	if err != nil {
+		return nil, err
+	}
 	if agent.Balance < sellPrice {
 		return nil, ErrInsufficient
 	}
@@ -86,7 +91,7 @@ func (s *TopupService) CreatePending(ctx context.Context, agentID int64, product
 		CustomerNo: customerNo,
 		Amount:     prod.Nominal,
 		SellPrice:  sellPrice,
-		Markup:     prod.DefaultMarkup,
+		Markup:     profit,
 		Status:     "PENDING",
 	}
 	if err := s.txRepo.Create(ctx, tx, t); err != nil {
@@ -96,6 +101,20 @@ func (s *TopupService) CreatePending(ctx context.Context, agentID int64, product
 		return nil, err
 	}
 	return t, nil
+}
+
+func calculateTopupPrice(cost, defaultSellPrice float64, requestedProfit *float64) (sellPrice, profit float64, err error) {
+	if cost <= 0 || defaultSellPrice < cost {
+		return 0, 0, ErrInvalidProductPrice
+	}
+	defaultProfit := defaultSellPrice - cost
+	if requestedProfit == nil {
+		return defaultSellPrice, defaultProfit, nil
+	}
+	if *requestedProfit < defaultProfit {
+		return 0, 0, ErrProfitBelowDefault
+	}
+	return cost + *requestedProfit, *requestedProfit, nil
 }
 
 func (s *TopupService) PendingTransactionIDs(ctx context.Context, limit int) ([]string, error) {

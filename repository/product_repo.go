@@ -15,11 +15,11 @@ func NewProductRepository(db *sql.DB) *ProductRepository {
 
 // FindByID (untuk agent)
 func (r *ProductRepository) FindByID(ctx context.Context, id string) (*model.Product, error) {
-	q := `SELECT id, operator, nominal, name, base_price, default_markup, is_active, created_at 
+	q := `SELECT id, operator, nominal, name, price, harga_jual, is_active, created_at
 	      FROM products WHERE id = ? AND is_active = 1 LIMIT 1`
 	var p model.Product
 	err := r.db.QueryRowContext(ctx, q, id).Scan(
-		&p.ID, &p.Operator, &p.Nominal, &p.Name, &p.BasePrice, &p.DefaultMarkup, &p.IsActive, &p.CreatedAt,
+		&p.ID, &p.Operator, &p.Nominal, &p.Name, &p.Price, &p.HargaJual, &p.IsActive, &p.CreatedAt,
 	)
 	if err == sql.ErrNoRows {
 		return nil, ErrNotFound
@@ -29,11 +29,11 @@ func (r *ProductRepository) FindByID(ctx context.Context, id string) (*model.Pro
 
 // FindAnyByID (untuk admin, termasuk yang nonaktif)
 func (r *ProductRepository) FindAnyByID(ctx context.Context, id string) (*model.Product, error) {
-	q := `SELECT id, operator, nominal, name, base_price, default_markup, is_active, created_at
+	q := `SELECT id, operator, nominal, name, price, harga_jual, is_active, created_at
 	      FROM products WHERE id = ? LIMIT 1`
 	var p model.Product
 	err := r.db.QueryRowContext(ctx, q, id).Scan(
-		&p.ID, &p.Operator, &p.Nominal, &p.Name, &p.BasePrice, &p.DefaultMarkup, &p.IsActive, &p.CreatedAt,
+		&p.ID, &p.Operator, &p.Nominal, &p.Name, &p.Price, &p.HargaJual, &p.IsActive, &p.CreatedAt,
 	)
 	if err == sql.ErrNoRows {
 		return nil, ErrNotFound
@@ -43,7 +43,7 @@ func (r *ProductRepository) FindAnyByID(ctx context.Context, id string) (*model.
 
 // ListActive (untuk agent)
 func (r *ProductRepository) ListActive(ctx context.Context, operator string) ([]model.Product, error) {
-	q := `SELECT id, operator, nominal, name, base_price, default_markup, is_active, created_at
+	q := `SELECT id, operator, nominal, name, price, harga_jual, is_active, created_at
 	      FROM products WHERE is_active = 1`
 	args := []interface{}{}
 	if operator != "" {
@@ -61,7 +61,7 @@ func (r *ProductRepository) ListActive(ctx context.Context, operator string) ([]
 	var out []model.Product
 	for rows.Next() {
 		var p model.Product
-		if err := rows.Scan(&p.ID, &p.Operator, &p.Nominal, &p.Name, &p.BasePrice, &p.DefaultMarkup, &p.IsActive, &p.CreatedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.Operator, &p.Nominal, &p.Name, &p.Price, &p.HargaJual, &p.IsActive, &p.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, p)
@@ -71,7 +71,7 @@ func (r *ProductRepository) ListActive(ctx context.Context, operator string) ([]
 
 // ListAll (untuk admin)
 func (r *ProductRepository) ListAll(ctx context.Context, operator string) ([]model.Product, error) {
-	q := `SELECT id, operator, nominal, name, base_price, default_markup, is_active, created_at
+	q := `SELECT id, operator, nominal, name, price, harga_jual, is_active, created_at
 	      FROM products WHERE 1=1`
 	args := []interface{}{}
 	if operator != "" {
@@ -89,7 +89,7 @@ func (r *ProductRepository) ListAll(ctx context.Context, operator string) ([]mod
 	var out []model.Product
 	for rows.Next() {
 		var p model.Product
-		if err := rows.Scan(&p.ID, &p.Operator, &p.Nominal, &p.Name, &p.BasePrice, &p.DefaultMarkup, &p.IsActive, &p.CreatedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.Operator, &p.Nominal, &p.Name, &p.Price, &p.HargaJual, &p.IsActive, &p.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, p)
@@ -99,15 +99,15 @@ func (r *ProductRepository) ListAll(ctx context.Context, operator string) ([]mod
 
 // Create
 func (r *ProductRepository) Create(ctx context.Context, p *model.Product) error {
-	q := `INSERT INTO products (id, operator, nominal, name, base_price, default_markup, is_active) VALUES (?, ?, ?, ?, ?, ?, ?)`
-	_, err := r.db.ExecContext(ctx, q, p.ID, p.Operator, p.Nominal, p.Name, p.BasePrice, p.DefaultMarkup, p.IsActive)
+	q := `INSERT INTO products (id, operator, nominal, name, price, harga_jual, is_active) VALUES (?, ?, ?, ?, ?, ?, ?)`
+	_, err := r.db.ExecContext(ctx, q, p.ID, p.Operator, p.Nominal, p.Name, p.Price, p.HargaJual, p.IsActive)
 	return err
 }
 
 // Update
 func (r *ProductRepository) Update(ctx context.Context, p *model.Product) error {
-	q := `UPDATE products SET operator=?, nominal=?, name=?, base_price=?, default_markup=?, is_active=? WHERE id=?`
-	_, err := r.db.ExecContext(ctx, q, p.Operator, p.Nominal, p.Name, p.BasePrice, p.DefaultMarkup, p.IsActive, p.ID)
+	q := `UPDATE products SET operator=?, nominal=?, name=?, price=?, harga_jual=?, is_active=? WHERE id=?`
+	_, err := r.db.ExecContext(ctx, q, p.Operator, p.Nominal, p.Name, p.Price, p.HargaJual, p.IsActive, p.ID)
 	return err
 }
 

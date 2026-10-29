@@ -65,6 +65,9 @@ Semua endpoint agent berikut memerlukan JWT:
 | `GET` | `/api/history/deposits?limit=20&offset=0` | Riwayat deposit agent |
 | `PATCH` | `/api/pin` | Mengganti PIN transaksi dengan verifikasi PIN lama |
 
+Daftar produk menampilkan nominal pulsa dan harga jual default (`harga_jual`).
+Harga modal distributor (`price`) hanya tersedia pada endpoint admin.
+
 Contoh memasang token:
 
 ```http
@@ -104,12 +107,17 @@ Body:
 {
   "product_id": "TSEL10",
   "customer_no": "081234567890",
+  "keuntungan": 400,
   "pin": "123456"
 }
 ```
 
 Laravel mendapatkan PIN dari form dashboard karyawan, lalu mengirimnya dari
 backend Laravel. Password API tidak disertakan dalam request transaksi.
+`keuntungan` bersifat opsional. Jika tidak dikirim, API memakai keuntungan
+default `harga_jual - price`. Jika dikirim, nilainya adalah keuntungan total
+di atas modal dan harus sama atau lebih besar dari keuntungan default. Harga
+yang didebit dari saldo agen adalah `price + keuntungan`.
 
 Respons diterima untuk diproses:
 
@@ -119,7 +127,9 @@ Respons diterima untuk diproses:
   "message": "transaction accepted for processing",
   "data": {
     "tx_id": "<transaction-id>",
-    "status": "PENDING"
+    "status": "PENDING",
+    "nominal": 10000,
+    "sell_price": 10400
   }
 }
 ```

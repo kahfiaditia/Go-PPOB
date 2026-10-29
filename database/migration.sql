@@ -43,8 +43,8 @@ CREATE TABLE IF NOT EXISTS products (
     operator VARCHAR(20) NOT NULL,
     nominal DECIMAL(15,2) NOT NULL,
     name VARCHAR(100) NOT NULL,
-    base_price DECIMAL(15,2) NOT NULL,
-    default_markup DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+    price DECIMAL(15,2) NOT NULL,
+    harga_jual DECIMAL(15,2) NOT NULL,
     is_active TINYINT(1) DEFAULT 1,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_operator (operator)

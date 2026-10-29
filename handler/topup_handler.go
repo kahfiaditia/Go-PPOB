@@ -21,9 +21,10 @@ func NewTopupHandler(s *service.TopupService, p *worker.Pool) *TopupHandler {
 }
 
 type topupReq struct {
-	ProductID  string `json:"product_id" binding:"required"`
-	CustomerNo string `json:"customer_no" binding:"required,min=8,max=20"`
-	Pin        string `json:"pin" binding:"required,len=6,numeric"`
+	ProductID  string   `json:"product_id" binding:"required"`
+	CustomerNo string   `json:"customer_no" binding:"required,min=8,max=20"`
+	Keuntungan *float64 `json:"keuntungan"`
+	Pin        string   `json:"pin" binding:"required,len=6,numeric"`
 }
 
 func (h *TopupHandler) Topup(c *gin.Context) {
@@ -35,7 +36,12 @@ func (h *TopupHandler) Topup(c *gin.Context) {
 	}
 
 	// Kirim req.Pin ke service
-	t, err := h.topupSvc.CreatePending(c.Request.Context(), agentID, req.ProductID, req.CustomerNo, req.Pin)
+	if req.Keuntungan != nil && *req.Keuntungan < 0 {
+		util.BadRequest(c, "keuntungan must be >= 0")
+		return
+	}
+
+	t, err := h.topupSvc.CreatePending(c.Request.Context(), agentID, req.ProductID, req.CustomerNo, req.Pin, req.Keuntungan)
 	if err != nil {
 		switch {
 		case errors.Is(err, service.ErrProductNotFound):
@@ -50,6 +56,8 @@ func (h *TopupHandler) Topup(c *gin.Context) {
 			util.Forbidden(c, "PIN transaksi belum diatur; hubungi superadmin")
 		case errors.Is(err, service.ErrInsufficient):
 			util.BadRequest(c, "insufficient balance")
+		case errors.Is(err, service.ErrProfitBelowDefault):
+			util.BadRequest(c, "keuntungan cannot be lower than the product default")
 		case errors.Is(err, repository.ErrNotFound):
 			util.NotFound(c, "agent not found")
 		default:
@@ -64,7 +72,9 @@ func (h *TopupHandler) Topup(c *gin.Context) {
 	}
 
 	util.Accepted(c, "transaction accepted for processing", gin.H{
-		"tx_id":  t.ID,
-		"status": "PENDING",
+		"tx_id":      t.ID,
+		"status":     "PENDING",
+		"nominal":    t.Amount,
+		"sell_price": t.SellPrice,
 	})
 }

@@ -63,17 +63,17 @@ func main() {
 
 	// Products
 	products := [][]interface{}{
-		{"TSEL10", "TELKOMSEL", 10000, "Telkomsel 10.000", 10500, 0},
-		{"TSEL25", "TELKOMSEL", 25000, "Telkomsel 25.000", 24500, 0},
-		{"ISAT10", "INDOSAT", 10000, "Indosat 10.000", 10300, 0},
-		{"XL10", "XL", 10000, "XL 10.000", 10200, 0},
-		{"TRI10", "TRI", 10000, "Tri 10.000", 10000, 0},
+		{"TSEL10", "TELKOMSEL", 10000, "Telkomsel 10.000", 10500, 10500},
+		{"TSEL25", "TELKOMSEL", 25000, "Telkomsel 25.000", 24500, 24500},
+		{"ISAT10", "INDOSAT", 10000, "Indosat 10.000", 10300, 10300},
+		{"XL10", "XL", 10000, "XL 10.000", 10200, 10200},
+		{"TRI10", "TRI", 10000, "Tri 10.000", 10000, 10000},
 	}
 	for _, p := range products {
-		_, err := db.Exec(`INSERT INTO products (id, operator, nominal, name, base_price, default_markup)
+		_, err := db.Exec(`INSERT INTO products (id, operator, nominal, name, price, harga_jual)
 		                   VALUES (?, ?, ?, ?, ?, ?)
 		                   ON DUPLICATE KEY UPDATE nominal = VALUES(nominal), name = VALUES(name),
-		                   base_price = VALUES(base_price), default_markup = VALUES(default_markup)`,
+		                   price = VALUES(price), harga_jual = VALUES(harga_jual)`,
 			p[0], p[1], p[2], p[3], p[4], p[5])
 		if err != nil {
 			log.Fatalf("product %v: %v", p[0], err)

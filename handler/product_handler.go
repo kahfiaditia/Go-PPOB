@@ -4,6 +4,7 @@ import (
 	"pulsa-backend/model"
 	"pulsa-backend/repository"
 	"pulsa-backend/util"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -28,7 +29,11 @@ func (h *ProductHandler) ListForAgent(c *gin.Context) {
 		util.InternalError(c, "failed to load products")
 		return
 	}
-	util.OK(c, "products", products)
+	response := make([]agentProductResponse, 0, len(products))
+	for _, product := range products {
+		response = append(response, toAgentProductResponse(product))
+	}
+	util.OK(c, "products", response)
 }
 
 // ============================================
@@ -41,7 +46,7 @@ func (h *ProductHandler) GetForAgent(c *gin.Context) {
 		util.NotFound(c, "product not found or inactive")
 		return
 	}
-	util.OK(c, "product detail", p)
+	util.OK(c, "product detail", toAgentProductResponse(*p))
 }
 
 // ============================================
@@ -54,19 +59,58 @@ func (h *ProductHandler) ListForAdmin(c *gin.Context) {
 		util.InternalError(c, "failed to load products")
 		return
 	}
-	util.OK(c, "all products", products)
+	response := make([]adminProductResponse, 0, len(products))
+	for _, product := range products {
+		response = append(response, toAdminProductResponse(product))
+	}
+	util.OK(c, "all products", response)
+}
+
+type agentProductResponse struct {
+	ID        string    `json:"id"`
+	Operator  string    `json:"operator"`
+	Nominal   float64   `json:"nominal"`
+	Name      string    `json:"name"`
+	HargaJual float64   `json:"harga_jual"`
+	IsActive  bool      `json:"is_active"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+type adminProductResponse struct {
+	ID        string    `json:"id"`
+	Operator  string    `json:"operator"`
+	Nominal   float64   `json:"nominal"`
+	Name      string    `json:"name"`
+	Price     float64   `json:"price"`
+	HargaJual float64   `json:"harga_jual"`
+	IsActive  bool      `json:"is_active"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+func toAgentProductResponse(p model.Product) agentProductResponse {
+	return agentProductResponse{
+		ID: p.ID, Operator: p.Operator, Nominal: p.Nominal, Name: p.Name,
+		HargaJual: p.HargaJual, IsActive: p.IsActive, CreatedAt: p.CreatedAt,
+	}
+}
+
+func toAdminProductResponse(p model.Product) adminProductResponse {
+	return adminProductResponse{
+		ID: p.ID, Operator: p.Operator, Nominal: p.Nominal, Name: p.Name,
+		Price: p.Price, HargaJual: p.HargaJual, IsActive: p.IsActive, CreatedAt: p.CreatedAt,
+	}
 }
 
 // ============================================
 // ADMIN — POST /api/admin/products
 // ============================================
 type createProductReq struct {
-	ID            string  `json:"id" binding:"required,min=2,max=20"`
-	Operator      string  `json:"operator" binding:"required"`
-	Nominal       float64 `json:"nominal" binding:"required,gt=0"`
-	Name          string  `json:"name" binding:"required"`
-	BasePrice     float64 `json:"base_price" binding:"required,gt=0"`
-	DefaultMarkup float64 `json:"default_markup" binding:"gte=0"`
+	ID        string  `json:"id" binding:"required,min=2,max=20"`
+	Operator  string  `json:"operator" binding:"required"`
+	Nominal   float64 `json:"nominal" binding:"required,gt=0"`
+	Name      string  `json:"name" binding:"required"`
+	Price     float64 `json:"price" binding:"required,gt=0"`
+	HargaJual float64 `json:"harga_jual" binding:"required,gt=0"`
 }
 
 func (h *ProductHandler) Create(c *gin.Context) {
@@ -75,28 +119,32 @@ func (h *ProductHandler) Create(c *gin.Context) {
 		util.BadRequest(c, err.Error())
 		return
 	}
+	if req.HargaJual < req.Price {
+		util.BadRequest(c, "harga_jual must be >= price")
+		return
+	}
 	p := &model.Product{
 		ID: req.ID, Operator: req.Operator, Nominal: req.Nominal, Name: req.Name,
-		BasePrice: req.BasePrice, DefaultMarkup: req.DefaultMarkup, IsActive: true,
+		Price: req.Price, HargaJual: req.HargaJual, IsActive: true,
 	}
 	if err := h.productRepo.Create(c.Request.Context(), p); err != nil {
 		util.Log.Errorf("[PRODUCT] create error: %v", err)
 		util.BadRequest(c, "failed to create product (maybe duplicate id)")
 		return
 	}
-	util.Created(c, "product created", p)
+	util.Created(c, "product created", toAdminProductResponse(*p))
 }
 
 // ============================================
 // ADMIN — PATCH /api/admin/products/:id
 // ============================================
 type updateProductReq struct {
-	Operator      *string  `json:"operator"`
-	Nominal       *float64 `json:"nominal"`
-	Name          *string  `json:"name"`
-	BasePrice     *float64 `json:"base_price"`
-	DefaultMarkup *float64 `json:"default_markup"`
-	IsActive      *bool    `json:"is_active"`
+	Operator  *string  `json:"operator"`
+	Nominal   *float64 `json:"nominal"`
+	Name      *string  `json:"name"`
+	Price     *float64 `json:"price"`
+	HargaJual *float64 `json:"harga_jual"`
+	IsActive  *bool    `json:"is_active"`
 }
 
 func (h *ProductHandler) Update(c *gin.Context) {
@@ -126,19 +174,23 @@ func (h *ProductHandler) Update(c *gin.Context) {
 		}
 		p.Nominal = *req.Nominal
 	}
-	if req.BasePrice != nil {
-		if *req.BasePrice <= 0 {
-			util.BadRequest(c, "base_price must be > 0")
+	if req.Price != nil {
+		if *req.Price <= 0 {
+			util.BadRequest(c, "price must be > 0")
 			return
 		}
-		p.BasePrice = *req.BasePrice
+		p.Price = *req.Price
 	}
-	if req.DefaultMarkup != nil {
-		if *req.DefaultMarkup < 0 {
-			util.BadRequest(c, "default_markup must be >= 0")
+	if req.HargaJual != nil {
+		if *req.HargaJual <= 0 {
+			util.BadRequest(c, "harga_jual must be > 0")
 			return
 		}
-		p.DefaultMarkup = *req.DefaultMarkup
+		p.HargaJual = *req.HargaJual
+	}
+	if p.HargaJual < p.Price {
+		util.BadRequest(c, "harga_jual must be >= price")
+		return
 	}
 	if req.IsActive != nil {
 		p.IsActive = *req.IsActive
@@ -148,7 +200,7 @@ func (h *ProductHandler) Update(c *gin.Context) {
 		util.InternalError(c, "failed to update product")
 		return
 	}
-	util.OK(c, "product updated", p)
+	util.OK(c, "product updated", toAdminProductResponse(*p))
 }
 
 // ============================================

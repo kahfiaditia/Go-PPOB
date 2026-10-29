@@ -38,6 +38,16 @@
    Perintah ini ditujukan untuk database baru. Database lama yang dibuat dari
    versi skema terdahulu perlu di-backup dan dimigrasikan secara terpisah.
 
+   Untuk database lama dengan kolom `base_price` dan `default_markup`, hentikan
+   server, buat backup, lalu jalankan migrasi harga satu kali:
+   ```bash
+   mysql -u root -p go_pulsa_db < database/migrations/20261029_replace_product_pricing_columns.sql
+   ```
+   Migrasi mengisi `harga_jual` dari harga default sebelumnya, memperbaiki
+   transaksi `PENDING` yang nominal/harga jualnya nol, lalu menghapus dua kolom
+   lama tersebut. Transaksi yang sudah selesai tidak diubah. Pastikan server
+   memakai build kode baru setelah migrasi.
+
 4. **Unduh dependency dan buat data demo**
    ```bash
    go mod download
