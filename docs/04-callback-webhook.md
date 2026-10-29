@@ -26,14 +26,22 @@ Sistem Distributor akan mengirim data dengan format **JSON**.
 
 ```http
 Content-Type: application/json
-X-Callback-Signature: <HMAC-SHA256-Signature> (Opsional, untuk keamanan ekstra)
+```
 
+Callback pada versi belajar ini tidak ditandatangani. Jangan menganggap request
+callback sebagai bukti autentikasi; gunakan callback hanya sebagai notifikasi,
+lalu cocokkan status transaksi melalui API yang terautentikasi. Secret callback
+per agent belum tersedia.
+
+Contoh payload:
+
+```json
 {
   "tx_id": "a1b2c3d4-e5f6-7890-1234-567890abcdef",
   "status": "SUCCESS",
   "customer_no": "081234567890",
   "product_id": "TSEL10",
-  "amount": 10500,
+  "amount": 10000,
   "reason": "",
   "timestamp": "2026-10-29T14:00:00Z"
 }

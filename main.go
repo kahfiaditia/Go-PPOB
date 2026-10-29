@@ -35,11 +35,12 @@ func main() {
 	agentRepo := repository.NewAgentRepository(db)
 	balanceHandler := handler.NewBalanceHandler(agentRepo)
 	adminRepo := repository.NewAdminRepository(db)
-	productRepo := repository.NewProductRepository(db) //
+	productRepo := repository.NewProductRepository(db)
 	productHandler := handler.NewProductHandler(productRepo)
 	txRepo := repository.NewTransactionRepository(db)
 	depositRepo := repository.NewDepositRepository(db)
 	ledgerRepo := repository.NewLedgerRepository(db)
+	profileHandler := handler.NewProfileHandler(agentRepo)
 
 	// --- Service layer ---
 	callbackSvc := service.NewCallbackService(db, agentRepo, txRepo,
@@ -88,6 +89,7 @@ func main() {
 		agent.GET("/products/:id", productHandler.GetForAgent)
 		agent.GET("/history/transactions", historyHandler.Transactions)
 		agent.GET("/history/deposits", historyHandler.Deposits)
+		agent.PATCH("/pin", profileHandler.UpdatePin)
 	}
 
 	// --- ADMIN (protected) ---
@@ -97,6 +99,11 @@ func main() {
 		admin.POST("/deposit", adminHandler.Deposit)
 		admin.GET("/agents", adminHandler.ListAgents)
 		admin.GET("/transactions", adminHandler.ListTransactions)
+		admin.PATCH("/agents/:id/pin", adminHandler.SetAgentPIN)
+		admin.GET("/products", productHandler.ListForAdmin)
+		admin.POST("/products", productHandler.Create)
+		admin.PATCH("/products/:id", productHandler.Update)
+		admin.DELETE("/products/:id", productHandler.Deactivate)
 	}
 
 	// --- Graceful shutdown ---

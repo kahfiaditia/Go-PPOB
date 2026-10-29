@@ -35,7 +35,7 @@ func Load() *Config {
 		DBPort:           getEnv("DB_PORT", "3306"),
 		DBUser:           getEnv("DB_USER", "root"),
 		DBPass:           getEnv("DB_PASS", ""),
-		DBName:           getEnv("DB_NAME", "pulsa_db"),
+		DBName:           getEnv("DB_NAME", "go_pulsa_db"),
 		JWTSecret:        getEnv("JWT_SECRET", ""),
 		JWTExpireHours:   getEnvInt("JWT_EXPIRE_HOURS", 24),
 		WorkerCount:      getEnvInt("WORKER_COUNT", 10),
@@ -46,6 +46,21 @@ func Load() *Config {
 
 	if len(cfg.JWTSecret) < 32 {
 		log.Fatal("[CONFIG] JWT_SECRET minimal 32 karakter untuk keamanan")
+	}
+	if cfg.JWTExpireHours <= 0 {
+		log.Fatal("[CONFIG] JWT_EXPIRE_HOURS harus lebih besar dari 0")
+	}
+	if cfg.WorkerCount <= 0 {
+		log.Fatal("[CONFIG] WORKER_COUNT harus lebih besar dari 0")
+	}
+	if cfg.QueueSize <= 0 {
+		log.Fatal("[CONFIG] QUEUE_SIZE harus lebih besar dari 0")
+	}
+	if cfg.CallbackTimeout <= 0 {
+		log.Fatal("[CONFIG] CALLBACK_TIMEOUT_SECONDS harus lebih besar dari 0")
+	}
+	if cfg.CallbackMaxRetry <= 0 {
+		log.Fatal("[CONFIG] CALLBACK_MAX_RETRY harus lebih besar dari 0")
 	}
 	return cfg
 }
@@ -67,6 +82,7 @@ func getEnvInt(key string, def int) int {
 		if n, err := strconv.Atoi(v); err == nil {
 			return n
 		}
+		log.Fatalf("[CONFIG] %s harus berupa angka bulat", key)
 	}
 	return def
 }

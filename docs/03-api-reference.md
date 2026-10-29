@@ -1,39 +1,210 @@
-# API Reference (Panduan Integrasi Agen)
+# API Reference dan Integrasi Laravel
 
-Dokumen ini ditujukan untuk **Agen/Klien** yang ingin mengintegrasikan sistem mereka (Laravel, PHP, Node.js, Python, dll) dengan Backend Distributor Pulsa.
+Dokumen ini menjelaskan integrasi **server-to-server** antara aplikasi Laravel
+milik agen dan API Golang distributor.
 
-- **Base URL:** `http://localhost:8080` (Ganti dengan domain Anda saat production, misal: `https://api.pulsa-anda.com`)
-- **Format Data:** `application/json`
-- **Autentikasi:** JWT (JSON Web Token)
+- Base URL lokal: `http://localhost:8080`
+- Format request/response: JSON
+- Autentikasi: JWT melalui header `Authorization: Bearer <token>`
 
----
+## Model kredensial
 
-## 🔐 1. Autentikasi (Login)
+Ada tiga kredensial dengan fungsi berbeda:
 
-Setiap request ke endpoint (selain login) **wajib** menyertakan token yang didapat dari proses login.
+| Kredensial | Disimpan/diketahui oleh | Digunakan untuk |
+|---|---|---|
+| Password Laravel | Karyawan dan aplikasi Laravel | Login ke dashboard Laravel |
+| Username/password API | Pemilik/programmer agen; disimpan di environment server Laravel | Login backend Laravel ke API Golang |
+| PIN transaksi | Pemilik agen; hash disimpan di database Golang | Konfirmasi setiap transaksi pulsa |
 
-### A. Login Agen
+Jangan pernah mengirim password Laravel ke API Golang. Jangan menaruh username,
+password API, atau JWT di JavaScript/browser. Laravel sebaiknya memanggil API
+Golang dari backend, menyimpan JWT di cache server-side, dan menampilkan hanya
+form PIN transaksi kepada karyawan.
 
-- **Method:** `POST`
-- **Endpoint:** `/api/agent/login`
-- **Body Request:**
+Password API hanya dipakai untuk login. Setiap transaksi tetap memerlukan PIN,
+sehingga token hasil login saja tidak cukup untuk membuat top-up. Semua request
+yang membawa password, token, atau PIN harus menggunakan HTTPS saat deployment.
 
-  ```json
-  {
-    "username": "agent01",
-    "password": "agent123"
-  }
-  ```
+## 1. Login agent API
 
-  {
+`POST /api/agent/login`
+
+```json
+{
+  "username": "agent01",
+  "password": "password-api-dari-environment-laravel"
+}
+```
+
+Respons sukses:
+
+```json
+{
   "success": true,
   "message": "login success",
   "data": {
-  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjEsInJvbGUiOiJhZ2VudCIs..."
+    "token": "<JWT>"
   }
-  }
+}
+```
 
-  {
-  "success": false,
-  "error": "invalid credentials"
+Token berlaku selama jumlah jam pada `JWT_EXPIRE_HOURS` (default 24 jam).
+Login ulang jika token kedaluwarsa. Jangan log response login atau token.
+
+## 2. Daftar produk dan saldo
+
+Semua endpoint agent berikut memerlukan JWT:
+
+| Method | Endpoint | Keterangan |
+|---|---|---|
+| `GET` | `/api/products` | Daftar produk aktif |
+| `GET` | `/api/products/:id` | Detail produk aktif |
+| `GET` | `/api/balance` | Saldo agent yang terautentikasi |
+| `GET` | `/api/history/transactions?limit=20&offset=0` | Riwayat transaksi agent |
+| `GET` | `/api/history/deposits?limit=20&offset=0` | Riwayat deposit agent |
+| `PATCH` | `/api/pin` | Mengganti PIN transaksi dengan verifikasi PIN lama |
+
+Contoh memasang token:
+
+```http
+Authorization: Bearer <JWT>
+```
+
+Ganti PIN dari dashboard pemilik dengan `PATCH /api/pin`:
+
+```json
+{
+  "current_pin": "123456",
+  "new_pin": "654321"
+}
+```
+
+PIN harus enam angka. API menyimpan hash bcrypt, bukan PIN teks biasa. Endpoint
+ini mewajibkan PIN lama sehingga JWT saja tidak cukup untuk mengambil alih PIN.
+Lima PIN salah berturut-turut mengunci verifikasi selama 15 menit; reset oleh
+superadmin menghapus lockout.
+Jika PIN belum pernah diatur atau pemilik lupa PIN, superadmin dapat
+memprovisikan ulang melalui `PATCH /api/admin/agents/:id/pin`.
+
+## 3. Membuat transaksi
+
+`POST /api/topup`
+
+Header:
+
+```http
+Authorization: Bearer <JWT>
+Content-Type: application/json
+```
+
+Body:
+
+```json
+{
+  "product_id": "TSEL10",
+  "customer_no": "081234567890",
+  "pin": "123456"
+}
+```
+
+Laravel mendapatkan PIN dari form dashboard karyawan, lalu mengirimnya dari
+backend Laravel. Password API tidak disertakan dalam request transaksi.
+
+Respons diterima untuk diproses:
+
+```json
+{
+  "success": true,
+  "message": "transaction accepted for processing",
+  "data": {
+    "tx_id": "<transaction-id>",
+    "status": "PENDING"
   }
+}
+```
+
+API menggunakan `202 Accepted`: transaksi belum tentu sudah selesai saat
+respons dikembalikan. Laravel dapat memeriksa status melalui
+`GET /api/history/transactions`. Jika worker antrean penuh atau aplikasi restart,
+transaksi pending tetap ada di database dan akan diambil ulang oleh worker.
+
+## 4. Contoh integrasi Laravel
+
+Simpan kredensial di `.env` Laravel (jangan commit file tersebut):
+
+```dotenv
+PULSA_API_BASE_URL=https://api.example.com
+PULSA_API_USERNAME=agent01
+PULSA_API_PASSWORD=ganti-dengan-password-api
+```
+
+Contoh pemanggilan backend secara ringkas:
+
+```php
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Http;
+
+$token = Cache::remember('pulsa_api_token', now()->addHours(23), function () {
+    $response = Http::asJson()->post(
+        config('services.pulsa.base_url').'/api/agent/login',
+        [
+            'username' => config('services.pulsa.username'),
+            'password' => config('services.pulsa.password'),
+        ]
+    )->throw();
+
+    return $response->json('data.token');
+});
+
+$response = Http::withToken($token)->asJson()->post(
+    config('services.pulsa.base_url').'/api/topup',
+    [
+        'product_id' => $request->string('product_id')->toString(),
+        'customer_no' => $request->string('customer_no')->toString(),
+        'pin' => $request->string('pin')->toString(),
+    ]
+)->throw();
+```
+
+Konfigurasikan `services.pulsa` untuk membaca tiga nilai environment di atas,
+misalnya di `config/services.php`:
+
+```php
+'pulsa' => [
+    'base_url' => env('PULSA_API_BASE_URL'),
+    'username' => env('PULSA_API_USERNAME'),
+    'password' => env('PULSA_API_PASSWORD'),
+],
+```
+
+Validasi PIN di Laravel untuk pengalaman pengguna, tetapi validasi dan verifikasi
+otoritatif tetap dilakukan API Golang. Jangan menyimpan PIN dalam log, session
+yang berumur panjang, atau tabel transaksi Laravel.
+
+Contoh cache di atas memakai masa cache lebih pendek daripada masa JWT default.
+Untuk integrasi produksi, tangani respons `401` dengan menghapus token cache,
+login ulang, lalu ulangi request secara aman. Jangan mengulang transaksi secara
+buta jika request timeout setelah diterima server; cek riwayat/status dahulu.
+
+## 5. Endpoint admin
+
+Endpoint berikut memerlukan JWT admin:
+
+| Method | Endpoint |
+|---|---|
+| `POST` | `/api/admin/login` |
+| `POST` | `/api/admin/deposit` |
+| `GET` | `/api/admin/agents` |
+| `GET` | `/api/admin/transactions` |
+| `GET` | `/api/admin/products` |
+| `POST` | `/api/admin/products` |
+| `PATCH` | `/api/admin/products/:id` |
+| `DELETE` | `/api/admin/products/:id` |
+| `PATCH` | `/api/admin/agents/:id/pin` (khusus superadmin) |
+
+## Catatan status simulasi
+
+Proyek ini untuk belajar dan belum mengirim pulsa ke provider/operator.
+`SUCCESS` berarti proses simulasi internal berhasil dan saldo telah dipotong,
+bukan konfirmasi pengiriman pulsa sesungguhnya.

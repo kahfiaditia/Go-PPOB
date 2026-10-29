@@ -1,6 +1,9 @@
 package handler
 
 import (
+	"errors"
+
+	"pulsa-backend/repository"
 	"pulsa-backend/service"
 	"pulsa-backend/util"
 	"pulsa-backend/worker"
@@ -20,6 +23,7 @@ func NewTopupHandler(s *service.TopupService, p *worker.Pool) *TopupHandler {
 type topupReq struct {
 	ProductID  string `json:"product_id" binding:"required"`
 	CustomerNo string `json:"customer_no" binding:"required,min=8,max=20"`
+	Pin        string `json:"pin" binding:"required,len=6,numeric"`
 }
 
 func (h *TopupHandler) Topup(c *gin.Context) {
@@ -30,19 +34,36 @@ func (h *TopupHandler) Topup(c *gin.Context) {
 		return
 	}
 
-	t, err := h.topupSvc.CreatePending(c.Request.Context(), agentID, req.ProductID, req.CustomerNo)
+	// Kirim req.Pin ke service
+	t, err := h.topupSvc.CreatePending(c.Request.Context(), agentID, req.ProductID, req.CustomerNo, req.Pin)
 	if err != nil {
-		util.BadRequest(c, err.Error())
+		switch {
+		case errors.Is(err, service.ErrProductNotFound):
+			util.NotFound(c, "product not found or inactive")
+		case errors.Is(err, service.ErrAgentInactive):
+			util.Forbidden(c, "agent is inactive")
+		case errors.Is(err, service.ErrPINLocked):
+			util.TooManyRequests(c, "PIN transaksi terkunci selama 15 menit")
+		case errors.Is(err, service.ErrPINIncorrect):
+			util.Forbidden(c, "PIN transaksi salah")
+		case errors.Is(err, service.ErrPINNotSet):
+			util.Forbidden(c, "PIN transaksi belum diatur; hubungi superadmin")
+		case errors.Is(err, service.ErrInsufficient):
+			util.BadRequest(c, "insufficient balance")
+		case errors.Is(err, repository.ErrNotFound):
+			util.NotFound(c, "agent not found")
+		default:
+			util.Log.Errorf("[TOPUP] create pending error agent=%d: %v", agentID, err)
+			util.InternalError(c, "failed to create transaction")
+		}
 		return
 	}
 
 	if !h.pool.Enqueue(worker.Job{TxID: t.ID}) {
-		util.Log.Warnf("[TOPUP] queue full, tx=%s pending", t.ID)
-		util.TooManyRequests(c, "server busy, transaction queued but delayed. retry later")
-		return
+		util.Log.Warnf("[TOPUP] queue full, tx=%s will be picked up by pending recovery", t.ID)
 	}
 
-	util.Accepted(c, "transaction queued", gin.H{
+	util.Accepted(c, "transaction accepted for processing", gin.H{
 		"tx_id":  t.ID,
 		"status": "PENDING",
 	})

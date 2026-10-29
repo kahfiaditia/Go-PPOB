@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"pulsa-backend/repository"
@@ -52,7 +53,7 @@ func (s *AuthService) LoginAdmin(ctx context.Context, username, password string)
 	if bcrypt.CompareHashAndPassword([]byte(admin.PasswordHash), []byte(password)) != nil {
 		return "", errors.New("invalid credentials")
 	}
-	return s.generateToken(admin.ID, "admin")
+	return s.generateToken(admin.ID, strings.ToLower(admin.Role))
 }
 
 func (s *AuthService) generateToken(sub int64, role string) (string, error) {

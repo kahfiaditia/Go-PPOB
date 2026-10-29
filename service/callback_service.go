@@ -5,7 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"fmt"
+	"io"
 	"net/http"
 	"time"
 
@@ -52,17 +52,31 @@ func (s *CallbackService) sendWithRetry(agentID int64, payload CallbackPayload) 
 	defer cancel()
 
 	agent, err := s.agentRepo.FindByID(ctx, agentID)
-	if err != nil || agent.CallbackURL == "" {
+	if err != nil {
+		util.Log.Errorf("[CALLBACK] cannot load agent=%d for tx=%s: %v", agentID, payload.TxID, err)
+		return
+	}
+	if agent.CallbackURL == "" {
 		util.Log.Debugf("[CALLBACK] skip tx=%s: no callback_url", payload.TxID)
 		return
 	}
 
-	body, _ := json.Marshal(payload)
+	body, err := json.Marshal(payload)
+	if err != nil {
+		util.Log.Errorf("[CALLBACK] marshal payload error tx=%s: %v", payload.TxID, err)
+		return
+	}
 
 	for attempt := 1; attempt <= s.maxRetry; attempt++ {
-		req, _ := http.NewRequestWithContext(ctx, http.MethodPost, agent.CallbackURL, bytes.NewReader(body))
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, agent.CallbackURL, bytes.NewReader(body))
+		if err != nil {
+			util.Log.Errorf("[CALLBACK] invalid callback request tx=%s: %v", payload.TxID, err)
+			if markErr := s.txRepo.MarkCallback(ctx, payload.TxID, "FAILED", attempt); markErr != nil {
+				util.Log.Errorf("[CALLBACK] failed to mark callback tx=%s: %v", payload.TxID, markErr)
+			}
+			return
+		}
 		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("X-Callback-Signature", util.Sign(payload, agentID))
 
 		resp, err := s.httpClient.Do(req)
 		httpStatus := 0
@@ -71,32 +85,42 @@ func (s *CallbackService) sendWithRetry(agentID int64, payload CallbackPayload) 
 
 		if err == nil {
 			httpStatus = resp.StatusCode
-			buf := new(bytes.Buffer)
-			buf.ReadFrom(resp.Body)
-			respBody = buf.String()
-			resp.Body.Close()
-			success = httpStatus >= 200 && httpStatus < 300
+			responseBytes, readErr := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
+			closeErr := resp.Body.Close()
+			respBody = string(responseBytes)
+			if readErr != nil {
+				err = readErr
+			} else if closeErr != nil {
+				err = closeErr
+			} else {
+				success = httpStatus >= 200 && httpStatus < 300
+			}
 		}
 
 		// log ke DB
-		_, _ = s.db.ExecContext(ctx,
+		if _, logErr := s.db.ExecContext(ctx,
 			`INSERT INTO callback_logs (tx_id, agent_id, url, http_status, response_body, attempt, success)
 			 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-			payload.TxID, agentID, agent.CallbackURL, httpStatus, respBody, attempt, success)
+			payload.TxID, agentID, agent.CallbackURL, httpStatus, respBody, attempt, success); logErr != nil {
+			util.Log.Errorf("[CALLBACK] failed to write callback log tx=%s attempt=%d: %v", payload.TxID, attempt, logErr)
+		}
 
 		if success {
-			s.txRepo.MarkCallback(ctx, payload.TxID, "SENT", attempt)
+			if err := s.txRepo.MarkCallback(ctx, payload.TxID, "SENT", attempt); err != nil {
+				util.Log.Errorf("[CALLBACK] failed to mark callback sent tx=%s: %v", payload.TxID, err)
+			}
 			util.Log.Infof("[CALLBACK] OK tx=%s attempt=%d status=%d", payload.TxID, attempt, httpStatus)
 			return
 		}
 
 		util.Log.Warnf("[CALLBACK] FAIL tx=%s attempt=%d err=%v", payload.TxID, attempt, err)
-		time.Sleep(time.Duration(attempt*2) * time.Second) // backoff
+		if attempt < s.maxRetry {
+			time.Sleep(time.Duration(attempt*2) * time.Second)
+		}
 	}
 
-	s.txRepo.MarkCallback(ctx, payload.TxID, "FAILED", s.maxRetry)
+	if err := s.txRepo.MarkCallback(ctx, payload.TxID, "FAILED", s.maxRetry); err != nil {
+		util.Log.Errorf("[CALLBACK] failed to mark callback failure tx=%s: %v", payload.TxID, err)
+	}
 	util.Log.Errorf("[CALLBACK] gave up tx=%s after %d attempts", payload.TxID, s.maxRetry)
 }
-
-// helper signature
-var _ = fmt.Sprintf

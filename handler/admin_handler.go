@@ -8,6 +8,7 @@ import (
 	"pulsa-backend/util"
 
 	"github.com/gin-gonic/gin"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type AdminHandler struct {
@@ -66,4 +67,46 @@ func (h *AdminHandler) ListTransactions(c *gin.Context) {
 		return
 	}
 	util.OK(c, "transactions", txs)
+}
+
+func (h *AdminHandler) SetAgentPIN(c *gin.Context) {
+	if c.GetString("admin_role") != "superadmin" {
+		util.Forbidden(c, "superadmin access only")
+		return
+	}
+
+	agentID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || agentID <= 0 {
+		util.BadRequest(c, "invalid agent id")
+		return
+	}
+
+	var req struct {
+		PIN string `json:"pin" binding:"required,len=6,numeric"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		util.BadRequest(c, "PIN harus berupa 6 angka")
+		return
+	}
+	if _, err := h.agentRepo.FindByID(c.Request.Context(), agentID); err != nil {
+		if err == repository.ErrNotFound {
+			util.NotFound(c, "agent not found")
+			return
+		}
+		util.InternalError(c, "failed to load agent")
+		return
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(req.PIN), bcrypt.DefaultCost)
+	if err != nil {
+		util.Log.Errorf("[ADMIN] PIN hash error agent=%d: %v", agentID, err)
+		util.InternalError(c, "failed to secure PIN")
+		return
+	}
+	if err := h.agentRepo.UpdatePin(c.Request.Context(), agentID, string(hash)); err != nil {
+		util.Log.Errorf("[ADMIN] PIN update error agent=%d: %v", agentID, err)
+		util.InternalError(c, "failed to update PIN")
+		return
+	}
+	util.OK(c, "agent PIN updated", gin.H{"agent_id": agentID})
 }

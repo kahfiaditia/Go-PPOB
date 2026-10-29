@@ -61,10 +61,12 @@ func (h *ProductHandler) ListForAdmin(c *gin.Context) {
 // ADMIN — POST /api/admin/products
 // ============================================
 type createProductReq struct {
-	ID       string  `json:"id" binding:"required,min=2,max=20"`
-	Operator string  `json:"operator" binding:"required"`
-	Name     string  `json:"name" binding:"required"`
-	Price    float64 `json:"price" binding:"required,gt=0"`
+	ID            string  `json:"id" binding:"required,min=2,max=20"`
+	Operator      string  `json:"operator" binding:"required"`
+	Nominal       float64 `json:"nominal" binding:"required,gt=0"`
+	Name          string  `json:"name" binding:"required"`
+	BasePrice     float64 `json:"base_price" binding:"required,gt=0"`
+	DefaultMarkup float64 `json:"default_markup" binding:"gte=0"`
 }
 
 func (h *ProductHandler) Create(c *gin.Context) {
@@ -74,8 +76,8 @@ func (h *ProductHandler) Create(c *gin.Context) {
 		return
 	}
 	p := &model.Product{
-		ID: req.ID, Operator: req.Operator, Name: req.Name,
-		Price: req.Price, IsActive: true,
+		ID: req.ID, Operator: req.Operator, Nominal: req.Nominal, Name: req.Name,
+		BasePrice: req.BasePrice, DefaultMarkup: req.DefaultMarkup, IsActive: true,
 	}
 	if err := h.productRepo.Create(c.Request.Context(), p); err != nil {
 		util.Log.Errorf("[PRODUCT] create error: %v", err)
@@ -89,10 +91,12 @@ func (h *ProductHandler) Create(c *gin.Context) {
 // ADMIN — PATCH /api/admin/products/:id
 // ============================================
 type updateProductReq struct {
-	Operator *string  `json:"operator"`
-	Name     *string  `json:"name"`
-	Price    *float64 `json:"price"`
-	IsActive *bool    `json:"is_active"`
+	Operator      *string  `json:"operator"`
+	Nominal       *float64 `json:"nominal"`
+	Name          *string  `json:"name"`
+	BasePrice     *float64 `json:"base_price"`
+	DefaultMarkup *float64 `json:"default_markup"`
+	IsActive      *bool    `json:"is_active"`
 }
 
 func (h *ProductHandler) Update(c *gin.Context) {
@@ -115,12 +119,26 @@ func (h *ProductHandler) Update(c *gin.Context) {
 	if req.Name != nil {
 		p.Name = *req.Name
 	}
-	if req.Price != nil {
-		if *req.Price <= 0 {
-			util.BadRequest(c, "price must be > 0")
+	if req.Nominal != nil {
+		if *req.Nominal <= 0 {
+			util.BadRequest(c, "nominal must be > 0")
 			return
 		}
-		p.Price = *req.Price
+		p.Nominal = *req.Nominal
+	}
+	if req.BasePrice != nil {
+		if *req.BasePrice <= 0 {
+			util.BadRequest(c, "base_price must be > 0")
+			return
+		}
+		p.BasePrice = *req.BasePrice
+	}
+	if req.DefaultMarkup != nil {
+		if *req.DefaultMarkup < 0 {
+			util.BadRequest(c, "default_markup must be >= 0")
+			return
+		}
+		p.DefaultMarkup = *req.DefaultMarkup
 	}
 	if req.IsActive != nil {
 		p.IsActive = *req.IsActive

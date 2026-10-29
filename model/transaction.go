@@ -8,6 +8,8 @@ type Transaction struct {
 	ProductID        string    `json:"product_id"`
 	CustomerNo       string    `json:"customer_no"`
 	Amount           float64   `json:"amount"`
+	SellPrice        float64   `json:"sell_price"`
+	Markup           float64   `json:"markup"`
 	Status           string    `json:"status"`
 	FailureReason    string    `json:"failure_reason,omitempty"`
 	CallbackStatus   string    `json:"callback_status"`

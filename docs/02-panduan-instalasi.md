@@ -2,37 +2,71 @@
 
 ## Prasyarat
 
-- Go (minimal versi 1.21)
+- Go sesuai versi yang tercantum di `go.mod`
 - MySQL (minimal versi 8.0)
 - Git
 
 ## Langkah-langkah
 
-1. **Clone Repository**
+1. **Clone repository**
    ```bash
-   git clone https://github.com/username-anda/pulsa-backend.git
-   cd pulsa-backend
+   git clone <URL-REPOSITORY>
+   cd pulsa_go
    ```
 
-- cp .env.example .env
+2. **Siapkan konfigurasi**
+   ```bash
+   cp -n .env.example .env
+   ```
 
-- DB_USER=root
-  DB_PASS=password_mysql_anda
-  DB_NAME=pulsa_db
-  JWT_SECRET=buat-string-random-minimal-32-karakter
+   Edit `.env` dengan kredensial MySQL lokal. `JWT_SECRET` wajib minimal 32
+   karakter; gunakan nilai acak milik sendiri. Nilai seed di contoh hanya untuk
+   pembelajaran lokal dan wajib diganti sebelum deployment.
 
-## Install Dependencies
+3. **Buat skema database**
+   ```bash
+   mysql -u root -p < database/migration.sql
+   ```
 
-- go mod download
+   Migration membuat database `go_pulsa_db`. Pastikan `DB_NAME` di `.env` sama.
+   Perintah ini ditujukan untuk database baru. Database lama yang dibuat dari
+   versi skema terdahulu perlu di-backup dan dimigrasikan secara terpisah.
 
-Migrasi Database
+4. **Unduh dependency dan buat data demo**
+   ```bash
+   go mod download
+   go run ./cmd/seed
+   ```
 
-- mysql -u root -p < internal/database/migration.sql
+   Seed membuat akun admin serta 60 akun agent (`agent01`–`agent60`) dan data
+   produk contoh. Password dan PIN demo dibaca dari `SEED_ADMIN_PASSWORD`,
+   `SEED_AGENT_PASSWORD`, dan `SEED_AGENT_PIN` pada `.env`. Seed tidak mengganti
+   password akun yang sudah ada.
 
-## Seed Data (Opsional)
+5. **Jalankan server**
+   ```bash
+   go run .
+   ```
 
-go run ./cmd/seed
+   Periksa server di `http://localhost:8080/health`. Respons health berisi
+   status server dan panjang antrean worker.
 
-## Jalankan
+## Kredensial demo lokal
 
-go run main.go
+- Login admin: username dari `SEED_ADMIN_USERNAME`, password dari
+  `SEED_ADMIN_PASSWORD`.
+- Login agent: username `agent01` (atau agent lain yang dibuat seed), password
+  dari `SEED_AGENT_PASSWORD`.
+- PIN transaksi demo: nilai `SEED_AGENT_PIN`.
+
+Ganti kredensial dan PIN pada deployment. Seed mengatur PIN awal untuk akun
+demo. Agent harus memberikan PIN lama untuk menggantinya melalui `PATCH
+/api/pin`; jika PIN hilang atau belum diatur, superadmin dapat mengatur ulang
+melalui `PATCH /api/admin/agents/:id/pin`.
+
+## Pemeriksaan
+
+```bash
+go test ./...
+go vet ./...
+```

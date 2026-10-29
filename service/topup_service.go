@@ -17,6 +17,10 @@ import (
 var (
 	ErrProductNotFound = errors.New("product not found")
 	ErrInsufficient    = errors.New("insufficient balance")
+	ErrAgentInactive   = errors.New("agent is inactive")
+	ErrPINNotSet       = errors.New("transaction PIN is not set")
+	ErrPINIncorrect    = errors.New("transaction PIN is incorrect")
+	ErrPINLocked       = errors.New("transaction PIN is temporarily locked")
 )
 
 type TopupService struct {
@@ -34,17 +38,38 @@ func NewTopupService(db *sql.DB, ar *repository.AgentRepository, pr *repository.
 }
 
 // CreatePending — dipanggil handler (cepat), hanya insert ke DB
-func (s *TopupService) CreatePending(ctx context.Context, agentID int64, productID, customerNo string) (*model.Transaction, error) {
+func (s *TopupService) CreatePending(ctx context.Context, agentID int64, productID, customerNo, pin string) (*model.Transaction, error) {
 	prod, err := s.productRepo.FindByID(ctx, productID)
 	if err != nil {
-		return nil, ErrProductNotFound
+		if errors.Is(err, repository.ErrNotFound) {
+			return nil, ErrProductNotFound
+		}
+		return nil, err
 	}
 
 	agent, err := s.agentRepo.FindByID(ctx, agentID)
 	if err != nil {
 		return nil, err
 	}
-	if agent.Balance < prod.Price {
+	if !agent.IsActive {
+		return nil, ErrAgentInactive
+	}
+
+	if err := s.agentRepo.VerifyPIN(ctx, agentID, pin); err != nil {
+		switch {
+		case errors.Is(err, repository.ErrPINNotSet):
+			return nil, ErrPINNotSet
+		case errors.Is(err, repository.ErrInvalidPIN):
+			return nil, ErrPINIncorrect
+		case errors.Is(err, repository.ErrPINLocked):
+			return nil, ErrPINLocked
+		default:
+			return nil, err
+		}
+	}
+
+	sellPrice := prod.BasePrice + prod.DefaultMarkup
+	if agent.Balance < sellPrice {
 		return nil, ErrInsufficient
 	}
 
@@ -59,7 +84,9 @@ func (s *TopupService) CreatePending(ctx context.Context, agentID int64, product
 		AgentID:    agentID,
 		ProductID:  productID,
 		CustomerNo: customerNo,
-		Amount:     prod.Price,
+		Amount:     prod.Nominal,
+		SellPrice:  sellPrice,
+		Markup:     prod.DefaultMarkup,
 		Status:     "PENDING",
 	}
 	if err := s.txRepo.Create(ctx, tx, t); err != nil {
@@ -71,18 +98,12 @@ func (s *TopupService) CreatePending(ctx context.Context, agentID int64, product
 	return t, nil
 }
 
+func (s *TopupService) PendingTransactionIDs(ctx context.Context, limit int) ([]string, error) {
+	return s.txRepo.ListPendingIDs(ctx, limit)
+}
+
 // Process — dipanggil worker; potong saldo atomik + callback
 func (s *TopupService) Process(ctx context.Context, txID string) {
-	t, err := s.txRepo.GetByID(ctx, txID)
-	if err != nil {
-		util.Log.Errorf("[TOPUP] cannot load tx=%s: %v", txID, err)
-		return
-	}
-	if t.Status != "PENDING" {
-		util.Log.Warnf("[TOPUP] tx=%s already processed status=%s", txID, t.Status)
-		return
-	}
-
 	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 	if err != nil {
 		util.Log.Errorf("[TOPUP] begin tx error: %v", err)
@@ -90,7 +111,17 @@ func (s *TopupService) Process(ctx context.Context, txID string) {
 	}
 	defer tx.Rollback()
 
-	// 1. Lock & baca saldo (SELECT FOR UPDATE)
+	t, err := s.txRepo.GetByIDForUpdate(ctx, tx, txID)
+	if err != nil {
+		util.Log.Errorf("[TOPUP] cannot lock tx=%s: %v", txID, err)
+		return
+	}
+	if t.Status != "PENDING" {
+		util.Log.Warnf("[TOPUP] tx=%s already processed status=%s", txID, t.Status)
+		return
+	}
+
+	// Lock and read the balance in the same transaction as the transaction status.
 	before, err := s.agentRepo.GetBalanceForUpdate(ctx, tx, t.AgentID)
 	if err != nil {
 		util.Log.Errorf("[TOPUP] lock error tx=%s: %v", txID, err)
@@ -98,9 +129,15 @@ func (s *TopupService) Process(ctx context.Context, txID string) {
 	}
 
 	// 2. Cek saldo
-	if before < t.Amount {
-		_ = s.txRepo.UpdateStatus(ctx, tx, t.ID, "FAILED", "insufficient balance")
-		_ = tx.Commit()
+	if before < t.SellPrice {
+		if err := s.txRepo.UpdateStatus(ctx, tx, t.ID, "FAILED", "insufficient balance"); err != nil {
+			util.Log.Errorf("[TOPUP] mark failed error tx=%s: %v", txID, err)
+			return
+		}
+		if err := tx.Commit(); err != nil {
+			util.Log.Errorf("[TOPUP] commit failed status error tx=%s: %v", txID, err)
+			return
+		}
 		s.cbService.Send(t.AgentID, CallbackPayload{
 			TxID: t.ID, Status: "FAILED", Reason: "insufficient balance",
 			CustomerNo: t.CustomerNo, ProductID: t.ProductID, Amount: t.Amount, Timestamp: time.Now(),
@@ -109,7 +146,7 @@ func (s *TopupService) Process(ctx context.Context, txID string) {
 	}
 
 	// 3. Potong saldo
-	if err := s.agentRepo.DeductBalance(ctx, tx, t.AgentID, t.Amount); err != nil {
+	if err := s.agentRepo.DeductBalance(ctx, tx, t.AgentID, t.SellPrice); err != nil {
 		util.Log.Errorf("[TOPUP] deduct error tx=%s: %v", txID, err)
 		return
 	}
@@ -121,9 +158,9 @@ func (s *TopupService) Process(ctx context.Context, txID string) {
 	}
 
 	// 5. Ledger
-	after := before - t.Amount
+	after := before - t.SellPrice
 	if err := s.ledgerRepo.Insert(ctx, tx, t.AgentID, "TRANSACTION", t.ID,
-		-t.Amount, before, after, fmt.Sprintf("Topup %s to %s", t.ProductID, t.CustomerNo)); err != nil {
+		-t.SellPrice, before, after, fmt.Sprintf("Topup %s to %s", t.ProductID, t.CustomerNo)); err != nil {
 		util.Log.Errorf("[TOPUP] ledger error tx=%s: %v", txID, err)
 		return
 	}
@@ -134,7 +171,7 @@ func (s *TopupService) Process(ctx context.Context, txID string) {
 		return
 	}
 
-	util.Log.Infof("[TOPUP] SUCCESS tx=%s agent=%d amount=%.2f", txID, t.AgentID, t.Amount)
+	util.Log.Infof("[TOPUP] SUCCESS tx=%s agent=%d amount=%.2f", txID, t.AgentID, t.SellPrice)
 
 	// 7. Callback async
 	s.cbService.Send(t.AgentID, CallbackPayload{

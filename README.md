@@ -14,7 +14,25 @@ Semua dokumentasi teknis dan panduan telah dipisahkan ke dalam folder `docs/`:
 
 ## ⚡ Quick Start
 
+Lihat [panduan instalasi](docs/02-panduan-instalasi.md) untuk langkah lengkap.
+
 ```bash
+cp -n .env.example .env
+# Sesuaikan koneksi MySQL dan JWT_SECRET di .env
+mysql -u root -p < database/migration.sql
 go mod download
-go run main.go
+go run ./cmd/seed
+go run .
 ```
+
+Seed demo membuat akun `admin` dan `agent01` sampai `agent60`. Password dan PIN
+diambil dari `.env`; ganti nilainya sebelum membagikan atau men-deploy aplikasi.
+Jangan commit file `.env`.
+
+API menggunakan login server-to-server: aplikasi Laravel menyimpan kredensial
+API di environment Laravel, mendapatkan JWT, lalu mengirim PIN transaksi
+bersama data top-up. Karyawan tidak perlu mengetahui password API. Baca
+[panduan integrasi API](docs/03-api-reference.md).
+
+Top-up pada proyek ini adalah simulasi pemrosesan internal; belum terhubung ke
+provider/operator pulsa.

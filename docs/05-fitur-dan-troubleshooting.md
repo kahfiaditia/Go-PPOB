@@ -29,8 +29,8 @@ Jika terjadi error, ikuti panduan di bawah ini untuk melakukan _debugging_.
 **Penyebab & Solusi:**
 
 1. **Worker Pool Mati:** Cek log server Golang (terminal). Apakah ada tulisan `[WORKER] pool started with 20 workers`? Jika tidak, pastikan server berjalan normal.
-2. **Antrean Penuh (Queue Overflow):** Cek endpoint `/health`. Jika nilai `queue` mendekati batas maksimal (2000), artinya worker kewalahan. Solusi: Naikkan `WORKER_COUNT` di file `.env` (misal jadi 50) dan restart server.
-3. **Error di Background:** Cek log Golang, cari prefix `[TOPUP]`. Mungkin ada error SQL (misal: koneksi database terputus di tengah jalan).
+2. **Antrean Penuh (Queue Overflow):** Cek endpoint `/health` dan nilai `queue`. Permintaan top-up yang sudah tercatat tetap berstatus `PENDING`; worker memindai database secara berkala dan mengambil transaksi pending ketika antrean tersedia. Jangan kirim ulang transaksi hanya karena antrean sedang penuh.
+3. **Error di Background:** Cek log Golang, cari prefix `[TOPUP]` atau `[WORKER]`. Worker juga memindai ulang transaksi pending setelah aplikasi restart. Pastikan database tetap tersedia dan tabel menggunakan skema terbaru.
 
 ### B. Status Transaksi `SUCCESS`, Tapi Saldo Agen Tidak Berkurang
 
@@ -54,7 +54,7 @@ Ini haram terjadi karena kita menggunakan Database Transaction (ACID). Jika stat
    - Jika `http_status = 0`: Server agen mati, tidak bisa dihubungi (Connection Refused / Timeout).
    - Jika `http_status = 500`: Ada error di kode server agen mereka.
    - Jika `http_status = 404`: URL callback yang agen berikan salah.
-4. **Solusi:** Hubungi agen, beritahu error di atas. Jika agen sudah memperbaiki sistemnya, Anda bisa mengirim ulang callback secara manual via API Admin: `POST /api/admin/transactions/:id/retry-callback`.
+4. **Solusi:** Hubungi agen, beritahu error di atas. Sistem saat ini tidak menyediakan endpoint untuk mengirim ulang callback secara manual; implementasikan retry administratif jika fitur tersebut dibutuhkan.
 
 ### D. Muncul Error `429 Too Many Requests`
 

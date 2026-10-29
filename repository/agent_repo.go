@@ -7,9 +7,16 @@ import (
 	"time"
 
 	"pulsa-backend/model"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
-var ErrNotFound = errors.New("record not found")
+var (
+	ErrNotFound   = errors.New("record not found")
+	ErrPINNotSet  = errors.New("transaction PIN is not set")
+	ErrInvalidPIN = errors.New("invalid transaction PIN")
+	ErrPINLocked  = errors.New("transaction PIN is temporarily locked")
+)
 
 type AgentRepository struct {
 	db *sql.DB
@@ -35,12 +42,12 @@ func (r *AgentRepository) FindByUsername(ctx context.Context, username string) (
 }
 
 func (r *AgentRepository) FindByID(ctx context.Context, id int64) (*model.Agent, error) {
-	q := `SELECT id, username, password_hash, name, COALESCE(email,''), COALESCE(phone,''),
-	         balance, COALESCE(callback_url,''), is_active, created_at
+	q := `SELECT id, username, password_hash, COALESCE(pin_hash, ''), name, COALESCE(email,''), 
+	         COALESCE(phone,''), balance, COALESCE(callback_url,''), is_active, created_at
 	      FROM agents WHERE id = ? LIMIT 1`
 	var a model.Agent
 	err := r.db.QueryRowContext(ctx, q, id).Scan(
-		&a.ID, &a.Username, &a.PasswordHash, &a.Name, &a.Email, &a.Phone,
+		&a.ID, &a.Username, &a.PasswordHash, &a.PinHash, &a.Name, &a.Email, &a.Phone,
 		&a.Balance, &a.CallbackURL, &a.IsActive, &a.CreatedAt,
 	)
 	if err == sql.ErrNoRows {
@@ -124,4 +131,66 @@ func (r *AgentRepository) GetBalance(ctx context.Context, agentID int64) (map[st
 		"is_active":  isActive,
 		"updated_at": updatedAt,
 	}, nil
+}
+
+func (r *AgentRepository) UpdatePin(ctx context.Context, agentID int64, pinHash string) error {
+	_, err := r.db.ExecContext(ctx,
+		`UPDATE agents SET pin_hash = ?, pin_failed_attempts = 0, pin_locked_until = NULL WHERE id = ?`,
+		pinHash, agentID)
+	return err
+}
+
+func (r *AgentRepository) VerifyPIN(ctx context.Context, agentID int64, pin string) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	var pinHash string
+	var failedAttempts int
+	var locked bool
+	err = tx.QueryRowContext(ctx, `SELECT COALESCE(pin_hash, ''), pin_failed_attempts,
+	        COALESCE(pin_locked_until > CURRENT_TIMESTAMP, 0)
+	      FROM agents WHERE id = ? FOR UPDATE`, agentID).Scan(&pinHash, &failedAttempts, &locked)
+	if err == sql.ErrNoRows {
+		return ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if locked {
+		return ErrPINLocked
+	}
+	if pinHash == "" {
+		return ErrPINNotSet
+	}
+	if bcrypt.CompareHashAndPassword([]byte(pinHash), []byte(pin)) != nil {
+		failedAttempts++
+		if failedAttempts >= 5 {
+			_, err = tx.ExecContext(ctx, `UPDATE agents SET pin_failed_attempts = 0,
+			        pin_locked_until = DATE_ADD(CURRENT_TIMESTAMP, INTERVAL 15 MINUTE) WHERE id = ?`, agentID)
+			if err != nil {
+				return err
+			}
+			if err := tx.Commit(); err != nil {
+				return err
+			}
+			return ErrPINLocked
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE agents SET pin_failed_attempts = ? WHERE id = ?`,
+			failedAttempts, agentID); err != nil {
+			return err
+		}
+		if err := tx.Commit(); err != nil {
+			return err
+		}
+		return ErrInvalidPIN
+	}
+
+	if _, err := tx.ExecContext(ctx, `UPDATE agents SET pin_failed_attempts = 0,
+	        pin_locked_until = NULL WHERE id = ?`, agentID); err != nil {
+		return err
+	}
+	return tx.Commit()
 }

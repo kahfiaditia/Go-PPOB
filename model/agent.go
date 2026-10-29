@@ -6,6 +6,7 @@ type Agent struct {
 	ID           int64     `json:"id"`
 	Username     string    `json:"username"`
 	PasswordHash string    `json:"-"`
+	PinHash      string    `json:"-"`
 	Name         string    `json:"name"`
 	Email        string    `json:"email"`
 	Phone        string    `json:"phone"`

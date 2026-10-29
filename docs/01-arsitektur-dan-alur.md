@@ -11,10 +11,12 @@
 1. **Deposit Saldo**:
    - Agen melakukan transfer bank ke rekening Distributor.
    - Admin Distributor membuka CMS Admin, memvalidasi transfer, dan menambahkan saldo ke akun Agen di database Golang.
-2. **Transaksi Pulsa**:
-   - Agen mengirim request ke API Distributor (membawa JWT Token hasil login, Nomor HP, dan ID Produk).
-   - Sistem Golang memvalidasi saldo Agen.
-   - Jika saldo cukup: Saldo dipotong, status transaksi di-set `SUCCESS` (atau masuk antrean worker), dan sistem mengirim _Callback_ ke URL sistem Agen.
-   - Jika saldo kurang: Status transaksi `FAILED`, sistem tetap mengirim _Callback_ ke URL Agen.
+2. **Transaksi pulsa (simulasi)**:
+   - Backend Laravel Agen login ke API Distributor menggunakan username/password API yang disimpan di environment server Laravel. Kredensial ini bukan password karyawan Laravel.
+   - Laravel menyimpan JWT di cache server-side dan mengirimkannya sebagai `Authorization: Bearer ...`.
+   - Karyawan memasukkan PIN transaksi melalui dashboard Laravel. Backend Laravel mengirim PIN itu bersama nomor tujuan dan ID produk; password API tidak dikirim ulang untuk transaksi.
+   - Sistem Golang memvalidasi JWT, PIN, produk, dan saldo. Worker memproses antrean, memotong harga jual dari saldo, mencatat ledger, lalu mengirim callback jika dikonfigurasi.
+   - Status `SUCCESS` pada versi belajar ini berarti simulasi internal berhasil. Belum ada koneksi ke provider/operator pulsa.
+   - Jika antrean penuh atau server restart, transaksi `PENDING` tetap tersimpan dan worker akan mencoba mengambilnya kembali dari database.
 3. **Penerimaan Status**:
    - Sistem Agen menerima Callback dari Distributor, lalu mengubah status transaksi di dashboard mereka dan menampilkannya ke pengguna akhir.

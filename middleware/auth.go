@@ -1,6 +1,8 @@
 package middleware
 
 import (
+	"encoding/json"
+	"strconv"
 	"strings"
 
 	"pulsa-backend/util"
@@ -33,7 +35,13 @@ func AuthAgent(secret []byte) gin.HandlerFunc {
 			return
 		}
 
-		c.Set("agent_id", int64(claims["sub"].(float64)))
+		id, ok := subjectID(claims)
+		if !ok {
+			util.Unauthorized(c, "invalid token claims")
+			c.Abort()
+			return
+		}
+		c.Set("agent_id", id)
 		c.Next()
 	}
 }
@@ -61,8 +69,15 @@ func AuthAdmin(secret []byte) gin.HandlerFunc {
 			return
 		}
 
-		c.Set("admin_id", int64(claims["sub"].(float64)))
-		c.Set("admin_role", claims["role"].(string))
+		id, ok := subjectID(claims)
+		if !ok {
+			util.Unauthorized(c, "invalid token claims")
+			c.Abort()
+			return
+		}
+		role, _ := claims["role"].(string)
+		c.Set("admin_id", id)
+		c.Set("admin_role", role)
 		c.Next()
 	}
 }
@@ -84,13 +99,35 @@ func parseToken(tokenStr string, secret []byte) (jwt.MapClaims, error) {
 			return nil, jwt.ErrSignatureInvalid
 		}
 		return secret, nil
-	})
-	if err != nil || !token.Valid {
+	}, jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}))
+	if err != nil {
 		return nil, err
+	}
+	if !token.Valid {
+		return nil, jwt.ErrTokenInvalidClaims
 	}
 	claims, ok := token.Claims.(jwt.MapClaims)
 	if !ok {
 		return nil, jwt.ErrTokenInvalidClaims
 	}
 	return claims, nil
+}
+
+func subjectID(claims jwt.MapClaims) (int64, bool) {
+	switch sub := claims["sub"].(type) {
+	case float64:
+		id := int64(sub)
+		if id <= 0 || float64(id) != sub {
+			return 0, false
+		}
+		return id, true
+	case json.Number:
+		id, err := sub.Int64()
+		return id, err == nil && id > 0
+	case string:
+		id, err := strconv.ParseInt(sub, 10, 64)
+		return id, err == nil && id > 0
+	default:
+		return 0, false
+	}
 }
