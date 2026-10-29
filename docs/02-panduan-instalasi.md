@@ -34,19 +34,13 @@
    mysql -u root -p < database/migration.sql
    ```
 
-   Migration membuat database `go_pulsa_db`. Pastikan `DB_NAME` di `.env` sama.
-   Perintah ini ditujukan untuk database baru. Database lama yang dibuat dari
-   versi skema terdahulu perlu di-backup dan dimigrasikan secara terpisah.
-
-   Untuk database lama dengan kolom `base_price` dan `default_markup`, hentikan
-   server, buat backup, lalu jalankan migrasi harga satu kali:
-   ```bash
-   mysql -u root -p go_pulsa_db < database/migrations/20261029_replace_product_pricing_columns.sql
-   ```
-   Migrasi mengisi `harga_jual` dari harga default sebelumnya, memperbaiki
-   transaksi `PENDING` yang nominal/harga jualnya nol, lalu menghapus dua kolom
-   lama tersebut. Transaksi yang sudah selesai tidak diubah. Pastikan server
-   memakai build kode baru setelah migrasi.
+   `database/migration.sql` mendefinisikan skema lengkap untuk database baru.
+   Pastikan `DB_NAME` di `.env` sama dengan nama database pada skrip. Skrip
+   memakai `CREATE TABLE IF NOT EXISTS`, sehingga tidak mengubah tabel yang
+   sudah ada. Versi proyek ini tidak menyediakan migrasi upgrade untuk skema
+   lama; jangan jalankan instalasi ulang pada database berisi data yang ingin
+   dipertahankan. Untuk memakai skema baru, siapkan database kosong dan backup
+   data lama terlebih dahulu.
 
 4. **Unduh dependency dan buat data demo**
    ```bash
@@ -57,7 +51,8 @@
    Seed membuat akun admin serta 60 akun agent (`agent01`–`agent60`) dan data
    produk contoh. Password dan PIN demo dibaca dari `SEED_ADMIN_PASSWORD`,
    `SEED_AGENT_PASSWORD`, dan `SEED_AGENT_PIN` pada `.env`. Seed tidak mengganti
-   password akun yang sudah ada.
+   password akun yang sudah ada. Harga produk demo mengatur `price` Rp500–Rp1.000
+   di atas nominal dan `harga_jual` Rp500 di atas `price`.
 
 5. **Jalankan server**
    ```bash
@@ -77,11 +72,16 @@
 
 ## Kredensial demo lokal
 
-- Login admin: username dari `SEED_ADMIN_USERNAME`, password dari
-  `SEED_ADMIN_PASSWORD`.
-- Login agent: username `agent01` (atau agent lain yang dibuat seed), password
-  dari `SEED_AGENT_PASSWORD`.
+- Login admin: email dari `SEED_ADMIN_EMAIL` (default
+  `admin@example.invalid`) dan password dari `SEED_ADMIN_PASSWORD`.
+- Login agent: email `agent01@example.invalid` (atau email agen yang dibuat
+  seed), password dari `SEED_AGENT_PASSWORD`.
 - PIN transaksi demo: nilai `SEED_AGENT_PIN`.
+
+Username tetap disimpan sebagai identitas internal dan minimal 7 karakter.
+Login API menggunakan email, bukan username. Email `.invalid` pada akun demo
+adalah placeholder lokal; gunakan alamat email terverifikasi/milik Anda untuk
+deployment.
 
 Ganti kredensial dan PIN pada deployment. Seed mengatur PIN awal untuk akun
 demo. Agent harus memberikan PIN lama untuk menggantinya melalui `PATCH

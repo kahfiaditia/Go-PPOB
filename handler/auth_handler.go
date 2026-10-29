@@ -12,7 +12,7 @@ type AuthHandler struct{ authSvc *service.AuthService }
 func NewAuthHandler(s *service.AuthService) *AuthHandler { return &AuthHandler{authSvc: s} }
 
 type loginReq struct {
-	Username string `json:"username" binding:"required"`
+	Email    string `json:"email" binding:"required,email"`
 	Password string `json:"password" binding:"required,min=6"`
 }
 
@@ -22,7 +22,7 @@ func (h *AuthHandler) AgentLogin(c *gin.Context) {
 		util.BadRequest(c, err.Error())
 		return
 	}
-	token, err := h.authSvc.LoginAgent(c.Request.Context(), req.Username, req.Password)
+	token, err := h.authSvc.LoginAgent(c.Request.Context(), req.Email, req.Password)
 	if err != nil {
 		util.Unauthorized(c, err.Error())
 		return
@@ -36,7 +36,7 @@ func (h *AuthHandler) AdminLogin(c *gin.Context) {
 		util.BadRequest(c, err.Error())
 		return
 	}
-	token, err := h.authSvc.LoginAdmin(c.Request.Context(), req.Username, req.Password)
+	token, err := h.authSvc.LoginAdmin(c.Request.Context(), req.Email, req.Password)
 	if err != nil {
 		util.Unauthorized(c, err.Error())
 		return

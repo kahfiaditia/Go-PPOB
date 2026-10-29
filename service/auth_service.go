@@ -28,8 +28,8 @@ func NewAuthService(a *repository.AgentRepository, ad *repository.AdminRepositor
 	}
 }
 
-func (s *AuthService) LoginAgent(ctx context.Context, username, password string) (string, error) {
-	agent, err := s.agentRepo.FindByUsername(ctx, username)
+func (s *AuthService) LoginAgent(ctx context.Context, email, password string) (string, error) {
+	agent, err := s.agentRepo.FindByEmail(ctx, strings.TrimSpace(email))
 	if err != nil {
 		return "", errors.New("invalid credentials")
 	}
@@ -42,8 +42,8 @@ func (s *AuthService) LoginAgent(ctx context.Context, username, password string)
 	return s.generateToken(agent.ID, "agent")
 }
 
-func (s *AuthService) LoginAdmin(ctx context.Context, username, password string) (string, error) {
-	admin, err := s.adminRepo.FindByUsername(ctx, username)
+func (s *AuthService) LoginAdmin(ctx context.Context, email, password string) (string, error) {
+	admin, err := s.adminRepo.FindByEmail(ctx, strings.TrimSpace(email))
 	if err != nil {
 		return "", errors.New("invalid credentials")
 	}

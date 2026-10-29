@@ -12,7 +12,7 @@
    - Agen melakukan transfer bank ke rekening Distributor.
    - Admin Distributor membuka CMS Admin, memvalidasi transfer, dan menambahkan saldo ke akun Agen di database Golang.
 2. **Transaksi pulsa (simulasi)**:
-   - Backend Laravel Agen login ke API Distributor menggunakan username/password API yang disimpan di environment server Laravel. Kredensial ini bukan password karyawan Laravel.
+   - Sistem Agen login ke API Distributor menggunakan email/password API yang disimpan di environment server Agen. Kredensial ini bukan password pengguna dashboard Agen.
    - Laravel menyimpan JWT di cache server-side dan mengirimkannya sebagai `Authorization: Bearer ...`.
    - Karyawan memasukkan PIN transaksi melalui dashboard Laravel. Backend Laravel mengirim PIN itu bersama nomor tujuan dan ID produk; password API tidak dikirim ulang untuk transaksi.
    - Sistem Golang memvalidasi JWT, PIN, produk, dan saldo. Worker memproses antrean, memotong harga jual final dari saldo, mencatat ledger, lalu mengirim callback jika dikonfigurasi.

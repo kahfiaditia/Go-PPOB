@@ -1,7 +1,7 @@
-# API Reference dan Integrasi Laravel
+# API Reference dan Integrasi Klien
 
-Dokumen ini menjelaskan integrasi **server-to-server** antara aplikasi Laravel
-milik agen dan API Golang distributor.
+Dokumen ini menjelaskan integrasi **server-to-server** antara sistem agen dan
+API Golang distributor. Klien dapat menggunakan bahasa atau framework apa pun.
 
 - Base URL lokal: `http://localhost:8080`
 - Format request/response: JSON
@@ -13,14 +13,14 @@ Ada tiga kredensial dengan fungsi berbeda:
 
 | Kredensial | Disimpan/diketahui oleh | Digunakan untuk |
 |---|---|---|
-| Password Laravel | Karyawan dan aplikasi Laravel | Login ke dashboard Laravel |
-| Username/password API | Pemilik/programmer agen; disimpan di environment server Laravel | Login backend Laravel ke API Golang |
+| Password aplikasi klien | Pengguna dan aplikasi klien | Login ke dashboard klien |
+| Email/password API | Pemilik/programmer agen; disimpan di environment server klien | Login backend ke API Golang |
 | PIN transaksi | Pemilik agen; hash disimpan di database Golang | Konfirmasi setiap transaksi pulsa |
 
-Jangan pernah mengirim password Laravel ke API Golang. Jangan menaruh username,
-password API, atau JWT di JavaScript/browser. Laravel sebaiknya memanggil API
-Golang dari backend, menyimpan JWT di cache server-side, dan menampilkan hanya
-form PIN transaksi kepada karyawan.
+Jangan pernah mengirim password aplikasi klien ke API Golang. Jangan menaruh
+email, password API, atau JWT di JavaScript/browser. Sistem klien sebaiknya
+memanggil API Golang dari backend, menyimpan JWT di cache server-side, dan
+menampilkan hanya form PIN transaksi kepada karyawan.
 
 Password API hanya dipakai untuk login. Setiap transaksi tetap memerlukan PIN,
 sehingga token hasil login saja tidak cukup untuk membuat top-up. Semua request
@@ -32,10 +32,14 @@ yang membawa password, token, atau PIN harus menggunakan HTTPS saat deployment.
 
 ```json
 {
-  "username": "agent01",
-  "password": "password-api-dari-environment-laravel"
+  "email": "agent01@example.invalid",
+  "password": "password-api-dari-environment-klien"
 }
 ```
+
+Login admin menggunakan format yang sama (`email` dan `password`) pada
+`POST /api/admin/login`. Kolom `username` tetap disimpan sebagai identitas
+internal dan minimal 7 karakter, tetapi bukan kredensial login.
 
 Respons sukses:
 
@@ -145,7 +149,7 @@ Simpan kredensial di `.env` Laravel (jangan commit file tersebut):
 
 ```dotenv
 PULSA_API_BASE_URL=https://api.example.com
-PULSA_API_USERNAME=agent01
+PULSA_API_EMAIL=agent01@example.invalid
 PULSA_API_PASSWORD=ganti-dengan-password-api
 ```
 
@@ -159,7 +163,7 @@ $token = Cache::remember('pulsa_api_token', now()->addHours(23), function () {
     $response = Http::asJson()->post(
         config('services.pulsa.base_url').'/api/agent/login',
         [
-            'username' => config('services.pulsa.username'),
+            'email' => config('services.pulsa.email'),
             'password' => config('services.pulsa.password'),
         ]
     )->throw();
@@ -183,7 +187,7 @@ misalnya di `config/services.php`:
 ```php
 'pulsa' => [
     'base_url' => env('PULSA_API_BASE_URL'),
-    'username' => env('PULSA_API_USERNAME'),
+    'email' => env('PULSA_API_EMAIL'),
     'password' => env('PULSA_API_PASSWORD'),
 ],
 ```

@@ -12,14 +12,16 @@ CREATE TABLE IF NOT EXISTS agents (
     pin_failed_attempts INT NOT NULL DEFAULT 0,
     pin_locked_until TIMESTAMP NULL DEFAULT NULL,
     name VARCHAR(100) NOT NULL,
-    email VARCHAR(100) DEFAULT NULL,
+    email VARCHAR(100) NOT NULL,
     phone VARCHAR(20) DEFAULT NULL,
     balance DECIMAL(15,2) NOT NULL DEFAULT 0.00,
     callback_url VARCHAR(255) DEFAULT NULL,
     callback_secret VARCHAR(64) DEFAULT NULL,
     is_active TINYINT(1) DEFAULT 1,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT chk_agents_username_min_length CHECK (CHAR_LENGTH(username) >= 7),
+    UNIQUE KEY uq_agents_email (email)
 ) ENGINE=InnoDB;
 
 -- ============================================
@@ -28,11 +30,14 @@ CREATE TABLE IF NOT EXISTS agents (
 CREATE TABLE IF NOT EXISTS admins (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     username VARCHAR(50) UNIQUE NOT NULL,
+    email VARCHAR(100) NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
     name VARCHAR(100) NOT NULL,
     role ENUM('SUPERADMIN','ADMIN') DEFAULT 'ADMIN',
     is_active TINYINT(1) DEFAULT 1,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT chk_admins_username_min_length CHECK (CHAR_LENGTH(username) >= 7),
+    UNIQUE KEY uq_admins_email (email)
 ) ENGINE=InnoDB;
 
 -- ============================================

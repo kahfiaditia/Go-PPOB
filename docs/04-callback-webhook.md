@@ -72,7 +72,4 @@ Contoh payload:
 }
 ```
 
-Untuk database yang sudah ada, jalankan
-`database/migrations/20261029_add_agent_callback_secret.sql` sebelum
-menjalankan versi aplikasi ini. Database baru memperoleh kolom tersebut dari
-`database/migration.sql`.
+Database baru memperoleh kolom secret dari `database/migration.sql`.

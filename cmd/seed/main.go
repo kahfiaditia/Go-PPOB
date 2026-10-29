@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"regexp"
+	"unicode/utf8"
 
 	"pulsa-backend/database"
 	"pulsa-backend/internal/config"
@@ -21,6 +22,12 @@ func main() {
 	defer db.Close()
 
 	adminPassword := requiredEnv("SEED_ADMIN_PASSWORD")
+	adminEmail := getEnv("SEED_ADMIN_EMAIL", "admin@example.invalid")
+	adminUsername := getEnv("SEED_ADMIN_USERNAME", "superadmin")
+	if utf8.RuneCountInString(adminUsername) < 7 {
+		log.Printf("SEED_ADMIN_USERNAME must be at least 7 characters; using superadmin")
+		adminUsername = "superadmin"
+	}
 	agentPassword := requiredEnv("SEED_AGENT_PASSWORD")
 	agentPIN := requiredEnv("SEED_AGENT_PIN")
 	if !regexp.MustCompile(`^[0-9]{6}$`).MatchString(agentPIN) {
@@ -32,9 +39,9 @@ func main() {
 	if err != nil {
 		log.Fatal("failed to hash seed admin password: ", err)
 	}
-	_, err = db.Exec(`INSERT INTO admins (username, password_hash, name, role) VALUES (?, ?, ?, ?)
+	_, err = db.Exec(`INSERT INTO admins (username, email, password_hash, name, role) VALUES (?, ?, ?, ?, ?)
 	                  ON DUPLICATE KEY UPDATE username = VALUES(username)`,
-		getEnv("SEED_ADMIN_USERNAME", "admin"), string(adminHash), "Super Admin", "SUPERADMIN")
+		adminUsername, adminEmail, string(adminHash), "Super Admin", "SUPERADMIN")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -50,11 +57,12 @@ func main() {
 	}
 	for i := 1; i <= 60; i++ {
 		username := fmt.Sprintf("agent%02d", i)
-		_, err := db.Exec(`INSERT INTO agents (username, password_hash, pin_hash, name, balance, callback_url)
-		                   VALUES (?, ?, ?, ?, 500000, ?)
+		email := fmt.Sprintf("agent%02d@example.invalid", i)
+		_, err := db.Exec(`INSERT INTO agents (username, email, password_hash, pin_hash, name, balance, callback_url)
+		                   VALUES (?, ?, ?, ?, ?, 500000, ?)
 		                   ON DUPLICATE KEY UPDATE username = VALUES(username),
 		                   pin_hash = COALESCE(pin_hash, VALUES(pin_hash))`,
-			username, string(agentHash), string(pinHash), fmt.Sprintf("Agen %02d", i),
+			username, email, string(agentHash), string(pinHash), fmt.Sprintf("Agen %02d", i),
 			"http://localhost:9090/callback")
 		if err != nil {
 			log.Fatalf("agent %s: %v", username, err)
@@ -62,25 +70,38 @@ func main() {
 	}
 
 	// Products
-	products := [][]interface{}{
-		{"TSEL10", "TELKOMSEL", 10000, "Telkomsel 10.000", 10500, 10500},
-		{"TSEL25", "TELKOMSEL", 25000, "Telkomsel 25.000", 24500, 24500},
-		{"ISAT10", "INDOSAT", 10000, "Indosat 10.000", 10300, 10300},
-		{"XL10", "XL", 10000, "XL 10.000", 10200, 10200},
-		{"TRI10", "TRI", 10000, "Tri 10.000", 10000, 10000},
-	}
+	products := seedProducts()
 	for _, p := range products {
 		_, err := db.Exec(`INSERT INTO products (id, operator, nominal, name, price, harga_jual)
 		                   VALUES (?, ?, ?, ?, ?, ?)
 		                   ON DUPLICATE KEY UPDATE nominal = VALUES(nominal), name = VALUES(name),
 		                   price = VALUES(price), harga_jual = VALUES(harga_jual)`,
-			p[0], p[1], p[2], p[3], p[4], p[5])
+			p.id, p.operator, p.nominal, p.name, p.price, p.hargaJual)
 		if err != nil {
-			log.Fatalf("product %v: %v", p[0], err)
+			log.Fatalf("product %s: %v", p.id, err)
 		}
 	}
 
 	log.Println("✅ Seed complete")
+}
+
+type seedProduct struct {
+	id        string
+	operator  string
+	nominal   float64
+	name      string
+	price     float64
+	hargaJual float64
+}
+
+func seedProducts() []seedProduct {
+	return []seedProduct{
+		{id: "TSEL10", operator: "TELKOMSEL", nominal: 10000, name: "Telkomsel 10.000", price: 10500, hargaJual: 11000},
+		{id: "TSEL25", operator: "TELKOMSEL", nominal: 25000, name: "Telkomsel 25.000", price: 25500, hargaJual: 26000},
+		{id: "ISAT10", operator: "INDOSAT", nominal: 10000, name: "Indosat 10.000", price: 10700, hargaJual: 11200},
+		{id: "XL10", operator: "XL", nominal: 10000, name: "XL 10.000", price: 10800, hargaJual: 11300},
+		{id: "TRI10", operator: "TRI", nominal: 10000, name: "Tri 10.000", price: 11000, hargaJual: 11500},
+	}
 }
 
 func requiredEnv(key string) string {

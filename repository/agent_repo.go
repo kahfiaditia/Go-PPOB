@@ -26,12 +26,12 @@ func NewAgentRepository(db *sql.DB) *AgentRepository {
 	return &AgentRepository{db: db}
 }
 
-func (r *AgentRepository) FindByUsername(ctx context.Context, username string) (*model.Agent, error) {
+func (r *AgentRepository) FindByEmail(ctx context.Context, email string) (*model.Agent, error) {
 	q := `SELECT id, username, password_hash, name, COALESCE(email,''), COALESCE(phone,''),
 	         balance, COALESCE(callback_url,''), is_active, created_at
-	      FROM agents WHERE username = ? LIMIT 1`
+	      FROM agents WHERE email = ? LIMIT 1`
 	var a model.Agent
-	err := r.db.QueryRowContext(ctx, q, username).Scan(
+	err := r.db.QueryRowContext(ctx, q, email).Scan(
 		&a.ID, &a.Username, &a.PasswordHash, &a.Name, &a.Email, &a.Phone,
 		&a.Balance, &a.CallbackURL, &a.IsActive, &a.CreatedAt,
 	)
