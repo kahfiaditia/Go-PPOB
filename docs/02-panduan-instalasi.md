@@ -2,7 +2,7 @@
 
 ## Prasyarat
 
-- Go (minimal versi 1.21)
+- Go version go1.27.3 darwin/arm64
 - MySQL (minimal versi 8.0)
 - Git
 
@@ -20,6 +20,8 @@
   DB_PASS=password_mysql_anda
   DB_NAME=pulsa_db
   JWT_SECRET=buat-string-random-minimal-32-karakter
+
+  //cara buat di terminal ketik openssl rand -hex 32
 
 ## Install Dependencies
 
