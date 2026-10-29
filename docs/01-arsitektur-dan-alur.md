@@ -3,7 +3,8 @@
 ## 1. Peran Sistem
 
 - **Distributor (Sistem Golang)**: Menyediakan API, mengelola saldo deposit agen, dan memproses transaksi pulsa.
-- **Agen (Klien)**: Pihak yang mendaftar ke Distributor. Memiliki sistem sendiri (Laravel, Node.js, dll) untuk melayani konter/pengguna akhir mereka.
+- **Agen (Klien)**: Pihak yang mendaftar ke Distributor. Bebas membangun sistem dengan Java/Spring, Node.js, Go, PHP/Laravel, Python, atau teknologi lain yang mendukung HTTP/JSON.
+- **Frontend agen**: Dapat memakai React atau framework UI lain. Untuk produksi, frontend sebaiknya memanggil backend milik agen; backend tersebut menyimpan kredensial API dan JWT dengan aman.
 - **CMS Admin (Akan Datang)**: Dashboard khusus untuk Distributor (Anda) untuk memvalidasi transfer deposit manual dari Agen.
 
 ## 2. Alur Bisnis (End-to-End)
@@ -13,8 +14,8 @@
    - Admin Distributor membuka CMS Admin, memvalidasi transfer, dan menambahkan saldo ke akun Agen di database Golang.
 2. **Transaksi pulsa (simulasi)**:
    - Sistem Agen login ke API Distributor menggunakan email/password API yang disimpan di environment server Agen. Kredensial ini bukan password pengguna dashboard Agen.
-   - Laravel menyimpan JWT di cache server-side dan mengirimkannya sebagai `Authorization: Bearer ...`.
-   - Karyawan memasukkan PIN transaksi melalui dashboard Laravel. Backend Laravel mengirim PIN itu bersama nomor tujuan dan ID produk; password API tidak dikirim ulang untuk transaksi.
+   - Backend Agen menyimpan JWT di cache server-side dan mengirimkannya sebagai token Bearer.
+   - Karyawan memasukkan PIN transaksi melalui dashboard Agen. Backend Agen mengirim PIN enam angka itu bersama nomor tujuan dan ID produk; password API tidak dikirim ulang untuk transaksi.
    - Sistem Golang memvalidasi JWT, PIN, produk, dan saldo. Worker memproses antrean, memotong harga jual final dari saldo, mencatat ledger, lalu mengirim callback jika dikonfigurasi.
    - Status `SUCCESS` pada versi belajar ini berarti simulasi internal berhasil. Belum ada koneksi ke provider/operator pulsa.
    - Jika antrean penuh atau server restart, transaksi `PENDING` tetap tersimpan dan worker akan mencoba mengambilnya kembali dari database.

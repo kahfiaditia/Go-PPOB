@@ -3,6 +3,12 @@
 Dokumen ini menjelaskan integrasi **server-to-server** antara sistem agen dan
 API Golang distributor. Klien dapat menggunakan bahasa atau framework apa pun.
 
+Contoh teknologi klien termasuk Java/Spring, Node.js, Go, PHP/Laravel, dan
+Python. API cukup menerima request HTTP dengan payload JSON dan JWT. React
+dapat digunakan sebagai frontend, tetapi jangan simpan kredensial API atau JWT
+jangka panjang di browser. Gunakan pola `React → backend agen → API distributor`
+agar rahasia API tetap berada di server.
+
 - Base URL lokal: `http://localhost:8080`
 - Format request/response: JSON
 - Autentikasi: JWT melalui header `Authorization: Bearer <token>`
@@ -116,8 +122,8 @@ Body:
 }
 ```
 
-Laravel mendapatkan PIN dari form dashboard karyawan, lalu mengirimnya dari
-backend Laravel. Password API tidak disertakan dalam request transaksi.
+Backend sistem agen mendapatkan PIN dari form dashboard karyawan, lalu
+mengirimnya ke API. Password API tidak disertakan dalam request transaksi.
 `keuntungan` bersifat opsional. Jika tidak dikirim, API memakai keuntungan
 default `harga_jual - price`. Jika dikirim, nilainya adalah keuntungan total
 di atas modal dan harus sama atau lebih besar dari keuntungan default. Harga
@@ -139,11 +145,11 @@ Respons diterima untuk diproses:
 ```
 
 API menggunakan `202 Accepted`: transaksi belum tentu sudah selesai saat
-respons dikembalikan. Laravel dapat memeriksa status melalui
+respons dikembalikan. Sistem agen dapat memeriksa status melalui
 `GET /api/history/transactions`. Jika worker antrean penuh atau aplikasi restart,
 transaksi pending tetap ada di database dan akan diambil ulang oleh worker.
 
-## 4. Contoh integrasi Laravel
+## 4. Contoh integrasi Laravel (opsional)
 
 Simpan kredensial di `.env` Laravel (jangan commit file tersebut):
 
@@ -192,9 +198,9 @@ misalnya di `config/services.php`:
 ],
 ```
 
-Validasi PIN di Laravel untuk pengalaman pengguna, tetapi validasi dan verifikasi
-otoritatif tetap dilakukan API Golang. Jangan menyimpan PIN dalam log, session
-yang berumur panjang, atau tabel transaksi Laravel.
+Validasi PIN di backend agen untuk pengalaman pengguna, tetapi validasi dan
+verifikasi otoritatif tetap dilakukan API Golang. Jangan menyimpan PIN dalam
+log, session yang berumur panjang, atau tabel transaksi.
 
 Contoh cache di atas memakai masa cache lebih pendek daripada masa JWT default.
 Untuk integrasi produksi, tangani respons `401` dengan menghapus token cache,

@@ -29,9 +29,11 @@ Seed demo membuat akun `admin` dan `agent01` sampai `agent60`. Password dan PIN
 diambil dari `.env`; ganti nilainya sebelum membagikan atau men-deploy aplikasi.
 Jangan commit file `.env`.
 
-API menggunakan login server-to-server: aplikasi Laravel menyimpan kredensial
-API di environment Laravel, mendapatkan JWT, lalu mengirim PIN transaksi
-bersama data top-up. Karyawan tidak perlu mengetahui password API. Baca
+API dapat diintegrasikan server-to-server oleh sistem agen dengan bahasa atau
+framework apa pun (misalnya Java, Node.js, Go, atau Laravel). Backend agen
+menyimpan kredensial API, mendapatkan JWT, lalu mengirim PIN transaksi bersama
+data top-up. React atau frontend lain dapat digunakan, tetapi jangan simpan
+kredensial API/JWT di browser. Baca
 [panduan integrasi API](docs/03-api-reference.md).
 
 Top-up pada proyek ini adalah simulasi pemrosesan internal; belum terhubung ke
