@@ -28,11 +28,13 @@ func NewAgentRepository(db *sql.DB) *AgentRepository {
 
 func (r *AgentRepository) FindByEmail(ctx context.Context, email string) (*model.Agent, error) {
 	q := `SELECT id, username, password_hash, name, COALESCE(email,''), COALESCE(phone,''),
+	         COALESCE(address,''), COALESCE(bank_name,''), COALESCE(bank_account_number,''),
 	         balance, COALESCE(callback_url,''), is_active, created_at
 	      FROM agents WHERE email = ? LIMIT 1`
 	var a model.Agent
 	err := r.db.QueryRowContext(ctx, q, email).Scan(
 		&a.ID, &a.Username, &a.PasswordHash, &a.Name, &a.Email, &a.Phone,
+		&a.Address, &a.BankName, &a.BankAccount,
 		&a.Balance, &a.CallbackURL, &a.IsActive, &a.CreatedAt,
 	)
 	if err == sql.ErrNoRows {
@@ -42,13 +44,16 @@ func (r *AgentRepository) FindByEmail(ctx context.Context, email string) (*model
 }
 
 func (r *AgentRepository) FindByID(ctx context.Context, id int64) (*model.Agent, error) {
-	q := `SELECT id, username, password_hash, COALESCE(pin_hash, ''), name, COALESCE(email,''), 
-	         COALESCE(phone,''), balance, COALESCE(callback_url,''), COALESCE(callback_secret,''), is_active, created_at
+	q := `SELECT id, username, password_hash, COALESCE(pin_hash, ''), name, COALESCE(email,''),
+	         COALESCE(phone,''), COALESCE(address,''), COALESCE(bank_name,''),
+	         COALESCE(bank_account_number,''), balance, COALESCE(callback_url,''),
+	         COALESCE(callback_secret,''), is_active, created_at
 	      FROM agents WHERE id = ? LIMIT 1`
 	var a model.Agent
 	err := r.db.QueryRowContext(ctx, q, id).Scan(
 		&a.ID, &a.Username, &a.PasswordHash, &a.PinHash, &a.Name, &a.Email, &a.Phone,
-		&a.Balance, &a.CallbackURL, &a.CallbackSecret, &a.IsActive, &a.CreatedAt,
+		&a.Address, &a.BankName, &a.BankAccount, &a.Balance, &a.CallbackURL,
+		&a.CallbackSecret, &a.IsActive, &a.CreatedAt,
 	)
 	if err == sql.ErrNoRows {
 		return nil, ErrNotFound
@@ -103,9 +108,25 @@ func (r *AgentRepository) AddBalance(ctx context.Context, tx *sql.Tx, agentID in
 	return err
 }
 
+func (r *AgentRepository) Create(ctx context.Context, agent *model.Agent) error {
+	result, err := r.db.ExecContext(ctx, `
+		INSERT INTO agents (username, password_hash, name, email, phone, address,
+		                    bank_name, bank_account_number)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		agent.Username, agent.PasswordHash, agent.Name, agent.Email, agent.Phone,
+		agent.Address, agent.BankName, agent.BankAccount,
+	)
+	if err != nil {
+		return err
+	}
+	agent.ID, err = result.LastInsertId()
+	return err
+}
+
 // ListAgents — untuk admin dashboard
 func (r *AgentRepository) List(ctx context.Context, limit, offset int) ([]model.Agent, error) {
 	q := `SELECT id, username, name, COALESCE(email,''), COALESCE(phone,''),
+	         COALESCE(address,''), COALESCE(bank_name,''), COALESCE(bank_account_number,''),
 	         balance, is_active, created_at
 	      FROM agents ORDER BY id DESC LIMIT ? OFFSET ?`
 	rows, err := r.db.QueryContext(ctx, q, limit, offset)
@@ -118,7 +139,7 @@ func (r *AgentRepository) List(ctx context.Context, limit, offset int) ([]model.
 	for rows.Next() {
 		var a model.Agent
 		if err := rows.Scan(&a.ID, &a.Username, &a.Name, &a.Email, &a.Phone,
-			&a.Balance, &a.IsActive, &a.CreatedAt); err != nil {
+			&a.Address, &a.BankName, &a.BankAccount, &a.Balance, &a.IsActive, &a.CreatedAt); err != nil {
 			return nil, err
 		}
 		agents = append(agents, a)
@@ -160,6 +181,22 @@ func (r *AgentRepository) UpdatePin(ctx context.Context, agentID int64, pinHash 
 		`UPDATE agents SET pin_hash = ?, pin_failed_attempts = 0, pin_locked_until = NULL WHERE id = ?`,
 		pinHash, agentID)
 	return err
+}
+
+func (r *AgentRepository) UpdatePassword(ctx context.Context, agentID int64, passwordHash string) error {
+	result, err := r.db.ExecContext(ctx,
+		`UPDATE agents SET password_hash = ? WHERE id = ?`, passwordHash, agentID)
+	if err != nil {
+		return err
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 func (r *AgentRepository) VerifyPIN(ctx context.Context, agentID int64, pin string) error {

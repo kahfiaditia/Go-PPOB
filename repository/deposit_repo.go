@@ -14,15 +14,15 @@ func NewDepositRepository(db *sql.DB) *DepositRepository {
 }
 
 func (r *DepositRepository) Create(ctx context.Context, tx *sql.Tx, d *model.Deposit) error {
-	q := `INSERT INTO deposits (id, agent_id, admin_id, amount, balance_before, balance_after, reference, note)
-	      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-	_, err := tx.ExecContext(ctx, q, d.ID, d.AgentID, d.AdminID, d.Amount,
+	q := `INSERT INTO deposits (id, request_id, agent_id, admin_id, amount, balance_before, balance_after, reference, note)
+	      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	_, err := tx.ExecContext(ctx, q, d.ID, d.RequestID, d.AgentID, d.AdminID, d.Amount,
 		d.BalanceBefore, d.BalanceAfter, d.Reference, d.Note)
 	return err
 }
 
 func (r *DepositRepository) ListByAgent(ctx context.Context, agentID int64, limit, offset int) ([]model.Deposit, error) {
-	q := `SELECT id, agent_id, admin_id, amount, balance_before, balance_after,
+	q := `SELECT id, request_id, agent_id, admin_id, amount, balance_before, balance_after,
 	         COALESCE(reference,''), COALESCE(note,''), created_at
 	      FROM deposits WHERE agent_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?`
 	rows, err := r.db.QueryContext(ctx, q, agentID, limit, offset)
@@ -34,7 +34,7 @@ func (r *DepositRepository) ListByAgent(ctx context.Context, agentID int64, limi
 	var ds []model.Deposit
 	for rows.Next() {
 		var d model.Deposit
-		if err := rows.Scan(&d.ID, &d.AgentID, &d.AdminID, &d.Amount, &d.BalanceBefore,
+		if err := rows.Scan(&d.ID, &d.RequestID, &d.AgentID, &d.AdminID, &d.Amount, &d.BalanceBefore,
 			&d.BalanceAfter, &d.Reference, &d.Note, &d.CreatedAt); err != nil {
 			return nil, err
 		}

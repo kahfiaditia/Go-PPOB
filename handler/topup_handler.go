@@ -3,6 +3,7 @@ package handler
 import (
 	"errors"
 
+	"pulsa-backend/model"
 	"pulsa-backend/repository"
 	"pulsa-backend/service"
 	"pulsa-backend/util"
@@ -36,8 +37,8 @@ func (h *TopupHandler) Topup(c *gin.Context) {
 	}
 
 	// Kirim req.Pin ke service
-	if req.Keuntungan != nil && *req.Keuntungan < 0 {
-		util.BadRequest(c, "keuntungan must be >= 0")
+	if req.Keuntungan != nil && (*req.Keuntungan < model.MinAgentProfit || *req.Keuntungan > model.MaxAgentProfit) {
+		util.BadRequest(c, "keuntungan must be between Rp500 and Rp2.000")
 		return
 	}
 
@@ -56,8 +57,8 @@ func (h *TopupHandler) Topup(c *gin.Context) {
 			util.Forbidden(c, "PIN transaksi belum diatur; hubungi superadmin")
 		case errors.Is(err, service.ErrInsufficient):
 			util.BadRequest(c, "insufficient balance")
-		case errors.Is(err, service.ErrProfitBelowDefault):
-			util.BadRequest(c, "keuntungan cannot be lower than the product default")
+		case errors.Is(err, service.ErrInvalidProfit):
+			util.BadRequest(c, "keuntungan must be between Rp500 and Rp2.000")
 		case errors.Is(err, repository.ErrNotFound):
 			util.NotFound(c, "agent not found")
 		default:
@@ -72,9 +73,11 @@ func (h *TopupHandler) Topup(c *gin.Context) {
 	}
 
 	util.Accepted(c, "transaction accepted for processing", gin.H{
-		"tx_id":      t.ID,
-		"status":     "PENDING",
-		"nominal":    t.Amount,
-		"sell_price": t.SellPrice,
+		"tx_id":          t.ID,
+		"status":         "PENDING",
+		"nominal":        t.Amount,
+		"sell_price":     t.SellPrice,
+		"keuntungan":     t.Markup,
+		"customer_price": t.CustomerPrice,
 	})
 }

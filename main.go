@@ -34,21 +34,26 @@ func main() {
 
 	// --- Repository layer ---
 	agentRepo := repository.NewAgentRepository(db)
+	agentUserRepo := repository.NewAgentUserRepository(db)
 	balanceHandler := handler.NewBalanceHandler(agentRepo)
 	adminRepo := repository.NewAdminRepository(db)
 	productRepo := repository.NewProductRepository(db)
+	pricingRepo := repository.NewAgentProductPricingRepository(db)
 	productHandler := handler.NewProductHandler(productRepo)
+	pricingHandler := handler.NewPricingHandler(pricingRepo, productRepo)
 	txRepo := repository.NewTransactionRepository(db)
 	depositRepo := repository.NewDepositRepository(db)
+	depositRequestRepo := repository.NewDepositRequestRepository(db)
 	ledgerRepo := repository.NewLedgerRepository(db)
 	profileHandler := handler.NewProfileHandler(agentRepo)
 
 	// --- Service layer ---
 	callbackSvc := service.NewCallbackService(db, agentRepo, txRepo,
 		cfg.CallbackTimeout, cfg.CallbackMaxRetry)
-	authSvc := service.NewAuthService(agentRepo, adminRepo, []byte(cfg.JWTSecret), cfg.JWTExpireHours)
-	topupSvc := service.NewTopupService(db, agentRepo, productRepo, txRepo, ledgerRepo, callbackSvc)
-	adminSvc := service.NewAdminService(db, agentRepo, depositRepo, ledgerRepo)
+	authSvc := service.NewAuthService(agentRepo, agentUserRepo, adminRepo, []byte(cfg.JWTSecret), cfg.JWTExpireHours)
+	topupSvc := service.NewTopupService(db, agentRepo, productRepo, pricingRepo, txRepo, ledgerRepo, callbackSvc)
+	depositRequestSvc := service.NewDepositRequestService(db, agentRepo, depositRequestRepo, depositRepo, ledgerRepo)
+	adminSvc := service.NewAdminService(db, agentRepo, ledgerRepo)
 
 	// --- Worker pool ---
 	pool := worker.NewPool(cfg.WorkerCount, cfg.QueueSize, topupSvc)
@@ -60,7 +65,8 @@ func main() {
 	authHandler := handler.NewAuthHandler(authSvc)
 	topupHandler := handler.NewTopupHandler(topupSvc, pool)
 	historyHandler := handler.NewHistoryHandler(txRepo, depositRepo)
-	adminHandler := handler.NewAdminHandler(adminSvc, agentRepo, txRepo)
+	depositRequestHandler := handler.NewDepositRequestHandler(depositRequestSvc, depositRequestRepo)
+	adminHandler := handler.NewAdminHandler(adminSvc, agentRepo, agentUserRepo, txRepo)
 
 	// --- Router ---
 	if cfg.AppEnv == "production" {
@@ -82,23 +88,35 @@ func main() {
 
 	// --- AGENT (protected) ---
 	agent := r.Group("/api")
-	agent.Use(middleware.AuthAgent([]byte(cfg.JWTSecret)))
+	agent.Use(middleware.AuthAgent([]byte(cfg.JWTSecret), authSvc))
 	{
 		agent.POST("/topup", topupHandler.Topup)
+		agent.POST("/deposits", depositRequestHandler.Create)
 		agent.GET("/balance", balanceHandler.MyBalance) // ← BARU: cek saldo sendiri
 		agent.GET("/products", productHandler.ListForAgent)
 		agent.GET("/products/:id", productHandler.GetForAgent)
+		agent.GET("/pricing", pricingHandler.List)
+		agent.PATCH("/pricing/:id", middleware.RequireAgentRole("owner"), pricingHandler.Update)
+		agent.GET("/dashboard/summary", historyHandler.DashboardSummary)
 		agent.GET("/history/transactions", historyHandler.Transactions)
 		agent.GET("/history/deposits", historyHandler.Deposits)
-		agent.PATCH("/pin", profileHandler.UpdatePin)
+		agent.GET("/history/deposit-requests", depositRequestHandler.ListByAgent)
+		agent.PATCH("/pin", middleware.RequireAgentRole("owner"), profileHandler.UpdatePin)
+		agent.PATCH("/password", middleware.RequireAgentRole("owner"), profileHandler.UpdatePassword)
 	}
 
 	// --- ADMIN (protected) ---
 	admin := r.Group("/api/admin")
 	admin.Use(middleware.AuthAdmin([]byte(cfg.JWTSecret)))
 	{
-		admin.POST("/deposit", adminHandler.Deposit)
 		admin.GET("/agents", adminHandler.ListAgents)
+		admin.POST("/agents", adminHandler.CreateAgent)
+		admin.GET("/deposit-requests", depositRequestHandler.ListAll)
+		admin.POST("/deposit-requests/:id/approve", depositRequestHandler.Approve)
+		admin.POST("/deposit-requests/:id/reject", depositRequestHandler.Reject)
+		admin.GET("/agents/:id/employees", adminHandler.ListEmployees)
+		admin.POST("/agents/:id/employees", adminHandler.CreateEmployee)
+		admin.PATCH("/agents/:id/employees/:employee_id", adminHandler.SetEmployeeActive)
 		admin.GET("/transactions", adminHandler.ListTransactions)
 		admin.PATCH("/agents/:id/pin", adminHandler.SetAgentPIN)
 		admin.POST("/agents/:id/callback-secret", adminHandler.RotateAgentCallbackSecret)

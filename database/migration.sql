@@ -14,6 +14,9 @@ CREATE TABLE IF NOT EXISTS agents (
     name VARCHAR(100) NOT NULL,
     email VARCHAR(100) NOT NULL,
     phone VARCHAR(20) DEFAULT NULL,
+    address VARCHAR(255) DEFAULT NULL,
+    bank_name VARCHAR(100) DEFAULT NULL,
+    bank_account_number VARCHAR(50) DEFAULT NULL,
     balance DECIMAL(15,2) NOT NULL DEFAULT 0.00,
     callback_url VARCHAR(255) DEFAULT NULL,
     callback_secret VARCHAR(64) DEFAULT NULL,
@@ -22,6 +25,24 @@ CREATE TABLE IF NOT EXISTS agents (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     CONSTRAINT chk_agents_username_min_length CHECK (CHAR_LENGTH(username) >= 7),
     UNIQUE KEY uq_agents_email (email)
+) ENGINE=InnoDB;
+
+-- ============================================
+-- AGENT USERS (pegawai; owner uses the agent account)
+-- ============================================
+CREATE TABLE IF NOT EXISTS agent_users (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    agent_id BIGINT NOT NULL,
+    username VARCHAR(50) NOT NULL,
+    email VARCHAR(100) NOT NULL UNIQUE,
+    password_hash VARCHAR(255) NOT NULL,
+    name VARCHAR(100) NOT NULL,
+    is_active TINYINT(1) NOT NULL DEFAULT 1,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT chk_agent_users_username_min_length CHECK (CHAR_LENGTH(username) >= 7),
+    UNIQUE KEY uq_agent_users_username (agent_id, username),
+    FOREIGN KEY (agent_id) REFERENCES agents(id)
 ) ENGINE=InnoDB;
 
 -- ============================================
@@ -56,6 +77,20 @@ CREATE TABLE IF NOT EXISTS products (
 ) ENGINE=InnoDB;
 
 -- ============================================
+-- AGENT PRODUCT PRICING (keuntungan default agen)
+-- ============================================
+CREATE TABLE IF NOT EXISTS agent_product_pricing (
+    agent_id BIGINT NOT NULL,
+    product_id VARCHAR(20) NOT NULL,
+    default_profit DECIMAL(15,2) NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (agent_id, product_id),
+    CONSTRAINT chk_agent_product_profit CHECK (default_profit BETWEEN 500 AND 2000),
+    FOREIGN KEY (agent_id) REFERENCES agents(id),
+    FOREIGN KEY (product_id) REFERENCES products(id)
+) ENGINE=InnoDB;
+
+-- ============================================
 -- TRANSACTIONS (Top-up pulsa ke customer)
 -- ============================================
 CREATE TABLE IF NOT EXISTS transactions (
@@ -80,10 +115,31 @@ CREATE TABLE IF NOT EXISTS transactions (
 ) ENGINE=InnoDB;
 
 -- ============================================
--- DEPOSITS (Top-up saldo agent oleh admin)
+-- DEPOSIT REQUESTS (approval workflow)
+-- ============================================
+CREATE TABLE IF NOT EXISTS deposit_requests (
+    id VARCHAR(36) PRIMARY KEY,
+    agent_id BIGINT NOT NULL,
+    amount DECIMAL(15,2) NOT NULL,
+    reference VARCHAR(100) NOT NULL COMMENT 'No. transfer / bukti',
+    status ENUM('PENDING','APPROVED','REJECTED') NOT NULL DEFAULT 'PENDING',
+    admin_id BIGINT DEFAULT NULL,
+    admin_note VARCHAR(255) DEFAULT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    processed_at TIMESTAMP NULL DEFAULT NULL,
+    FOREIGN KEY (agent_id) REFERENCES agents(id),
+    FOREIGN KEY (admin_id) REFERENCES admins(id),
+    INDEX idx_deposit_requests_status_created (status, created_at),
+    INDEX idx_deposit_requests_agent_created (agent_id, created_at),
+    UNIQUE KEY uq_deposit_request_agent_reference (agent_id, reference)
+) ENGINE=InnoDB;
+
+-- ============================================
+-- DEPOSITS (approved top-up saldo agent)
 -- ============================================
 CREATE TABLE IF NOT EXISTS deposits (
     id VARCHAR(36) PRIMARY KEY,
+    request_id VARCHAR(36) NOT NULL UNIQUE,
     agent_id BIGINT NOT NULL,
     admin_id BIGINT NOT NULL,
     amount DECIMAL(15,2) NOT NULL,
@@ -94,6 +150,7 @@ CREATE TABLE IF NOT EXISTS deposits (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (agent_id) REFERENCES agents(id),
     FOREIGN KEY (admin_id) REFERENCES admins(id),
+    FOREIGN KEY (request_id) REFERENCES deposit_requests(id),
     INDEX idx_agent_created (agent_id, created_at)
 ) ENGINE=InnoDB;
 

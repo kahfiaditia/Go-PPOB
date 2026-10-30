@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"errors"
+
 	"pulsa-backend/service"
 	"pulsa-backend/util"
 
@@ -24,7 +26,7 @@ func (h *AuthHandler) AgentLogin(c *gin.Context) {
 	}
 	token, err := h.authSvc.LoginAgent(c.Request.Context(), req.Email, req.Password)
 	if err != nil {
-		util.Unauthorized(c, err.Error())
+		h.writeLoginError(c, err)
 		return
 	}
 	util.OK(c, "login success", gin.H{"token": token})
@@ -38,8 +40,20 @@ func (h *AuthHandler) AdminLogin(c *gin.Context) {
 	}
 	token, err := h.authSvc.LoginAdmin(c.Request.Context(), req.Email, req.Password)
 	if err != nil {
-		util.Unauthorized(c, err.Error())
+		h.writeLoginError(c, err)
 		return
 	}
 	util.OK(c, "login success", gin.H{"token": token})
+}
+
+func (h *AuthHandler) writeLoginError(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, service.ErrInvalidCredentials):
+		util.Unauthorized(c, "invalid credentials")
+	case errors.Is(err, service.ErrAuthInactive):
+		util.Forbidden(c, "account is inactive")
+	default:
+		util.Log.Errorf("[AUTH] login error: %v", err)
+		util.InternalError(c, "login failed")
+	}
 }

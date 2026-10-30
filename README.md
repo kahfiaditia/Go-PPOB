@@ -30,10 +30,11 @@ diambil dari `.env`; ganti nilainya sebelum membagikan atau men-deploy aplikasi.
 Jangan commit file `.env`.
 
 API dapat diintegrasikan server-to-server oleh sistem agen dengan bahasa atau
-framework apa pun (misalnya Java, Node.js, Go, atau Laravel). Backend agen
-menyimpan kredensial API, mendapatkan JWT, lalu mengirim PIN transaksi bersama
-data top-up. React atau frontend lain dapat digunakan, tetapi jangan simpan
-kredensial API/JWT di browser. Baca
+framework apa pun (misalnya Java, Node.js, Go, atau Laravel). Owner dan pegawai
+memiliki akun API masing-masing dengan role pada JWT. Backend agen menyimpan
+token pengguna aktif di server dan mengirim PIN transaksi bersama data top-up.
+React atau frontend lain dapat digunakan, tetapi jangan simpan password/JWT di
+browser. Admin distributor mengelola akun pegawai. Baca
 [panduan integrasi API](docs/03-api-reference.md).
 
 Top-up pada proyek ini adalah simulasi pemrosesan internal; belum terhubung ke

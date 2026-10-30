@@ -37,10 +37,19 @@
    `database/migration.sql` mendefinisikan skema lengkap untuk database baru.
    Pastikan `DB_NAME` di `.env` sama dengan nama database pada skrip. Skrip
    memakai `CREATE TABLE IF NOT EXISTS`, sehingga tidak mengubah tabel yang
-   sudah ada. Versi proyek ini tidak menyediakan migrasi upgrade untuk skema
-   lama; jangan jalankan instalasi ulang pada database berisi data yang ingin
-   dipertahankan. Untuk memakai skema baru, siapkan database kosong dan backup
-   data lama terlebih dahulu.
+   sudah ada.
+
+   Untuk database yang masih memakai skema legacy sebelum akun pegawai dan
+   permintaan deposit, backup database terlebih dahulu, lalu jalankan migrasi
+   upgrade satu kali:
+   ```bash
+   mysqldump -u root -p go_pulsa_db > backup-go-pulsa.sql
+   mysql -u root -p < database/migration_upgrade_legacy.sql
+   ```
+   Migrasi upgrade mengisi email kosong dari username dengan domain
+   `example.invalid` agar akun lama tetap dapat login melalui email. Sesuaikan
+   email tersebut setelah upgrade. Skrip ini ditujukan untuk skema legacy
+   proyek; jangan jalankan ulang atau pada database dengan skema berbeda.
 
 4. **Unduh dependency dan buat data demo**
    ```bash
@@ -48,7 +57,7 @@
    go run ./cmd/seed
    ```
 
-   Seed membuat akun admin serta 60 akun agent (`agent01`–`agent60`) dan data
+   Seed membuat akun admin serta 60 akun owner (`agent01`–`agent60`) dan data
    produk contoh. Password dan PIN demo dibaca dari `SEED_ADMIN_PASSWORD`,
    `SEED_AGENT_PASSWORD`, dan `SEED_AGENT_PIN` pada `.env`. Seed tidak mengganti
    password akun yang sudah ada. Harga produk demo mengatur `price` Rp500–Rp1.000
@@ -74,8 +83,8 @@
 
 - Login admin: email dari `SEED_ADMIN_EMAIL` (default
   `admin@example.invalid`) dan password dari `SEED_ADMIN_PASSWORD`.
-- Login agent: email `agent01@example.invalid` (atau email agen yang dibuat
-  seed), password dari `SEED_AGENT_PASSWORD`.
+- Login owner: email `agent01@example.invalid` (atau email agen yang dibuat
+  admin), password dari `SEED_AGENT_PASSWORD` untuk akun demo.
 - PIN transaksi demo: nilai `SEED_AGENT_PIN`.
 
 Username tetap disimpan sebagai identitas internal dan minimal 7 karakter.
@@ -84,9 +93,12 @@ adalah placeholder lokal; gunakan alamat email terverifikasi/milik Anda untuk
 deployment.
 
 Ganti kredensial dan PIN pada deployment. Seed mengatur PIN awal untuk akun
-demo. Agent harus memberikan PIN lama untuk menggantinya melalui `PATCH
-/api/pin`; jika PIN hilang atau belum diatur, superadmin dapat mengatur ulang
-melalui `PATCH /api/admin/agents/:id/pin`.
+owner demo. Hanya owner yang dapat mengganti password login melalui
+`PATCH /api/password` dan PIN melalui `PATCH /api/pin`; perubahan PIN
+memerlukan PIN lama. Jika PIN hilang atau belum diatur, superadmin dapat
+mengatur ulang melalui `PATCH /api/admin/agents/:id/pin`.
+Admin distributor membuat akun owner melalui `POST /api/admin/agents` dan
+pegawai melalui `POST /api/admin/agents/:id/employees`.
 
 ## Pemeriksaan
 

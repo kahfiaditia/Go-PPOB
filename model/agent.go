@@ -10,6 +10,9 @@ type Agent struct {
 	Name           string    `json:"name"`
 	Email          string    `json:"email"`
 	Phone          string    `json:"phone"`
+	Address        string    `json:"address"`
+	BankName       string    `json:"bank_name"`
+	BankAccount    string    `json:"bank_account_number"`
 	Balance        float64   `json:"balance"`
 	CallbackURL    string    `json:"callback_url"`
 	CallbackSecret string    `json:"-"`

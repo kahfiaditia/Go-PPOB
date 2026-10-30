@@ -1,90 +1,107 @@
 # API Reference dan Integrasi Klien
 
 Dokumen ini menjelaskan integrasi **server-to-server** antara sistem agen dan
-API Golang distributor. Klien dapat menggunakan bahasa atau framework apa pun.
-
-Contoh teknologi klien termasuk Java/Spring, Node.js, Go, PHP/Laravel, dan
-Python. API cukup menerima request HTTP dengan payload JSON dan JWT. React
-dapat digunakan sebagai frontend, tetapi jangan simpan kredensial API atau JWT
-jangka panjang di browser. Gunakan pola `React → backend agen → API distributor`
-agar rahasia API tetap berada di server.
+API Golang distributor. Klien dapat menggunakan bahasa/framework apa pun yang
+mendukung HTTP dan JSON.
 
 - Base URL lokal: `http://localhost:8080`
 - Format request/response: JSON
-- Autentikasi: JWT melalui header `Authorization: Bearer <token>`
+- Autentikasi: `Authorization: Bearer USER_JWT`
+- Semua request yang membawa password, token, atau PIN harus memakai HTTPS
+  saat deployment.
 
-## Model kredensial
+## 1. Login owner atau pegawai
 
-Ada tiga kredensial dengan fungsi berbeda:
-
-| Kredensial | Disimpan/diketahui oleh | Digunakan untuk |
-|---|---|---|
-| Password aplikasi klien | Pengguna dan aplikasi klien | Login ke dashboard klien |
-| Email/password API | Pemilik/programmer agen; disimpan di environment server klien | Login backend ke API Golang |
-| PIN transaksi | Pemilik agen; hash disimpan di database Golang | Konfirmasi setiap transaksi pulsa |
-
-Jangan pernah mengirim password aplikasi klien ke API Golang. Jangan menaruh
-email, password API, atau JWT di JavaScript/browser. Sistem klien sebaiknya
-memanggil API Golang dari backend, menyimpan JWT di cache server-side, dan
-menampilkan hanya form PIN transaksi kepada karyawan.
-
-Password API hanya dipakai untuk login. Setiap transaksi tetap memerlukan PIN,
-sehingga token hasil login saja tidak cukup untuk membuat top-up. Semua request
-yang membawa password, token, atau PIN harus menggunakan HTTPS saat deployment.
-
-## 1. Login agent API
+Owner dan pegawai memiliki akun distributor masing-masing dan memakai endpoint
+login yang sama. Owner dibuat saat pendaftaran agen; admin distributor
+membuat akun pegawai.
 
 `POST /api/agent/login`
 
 ```json
 {
-  "email": "agent01@example.invalid",
-  "password": "password-api-dari-environment-klien"
+  "email": "pegawai@example.invalid",
+  "password": "password-pengguna"
 }
 ```
 
-Login admin menggunakan format yang sama (`email` dan `password`) pada
-`POST /api/admin/login`. Kolom `username` tetap disimpan sebagai identitas
-internal dan minimal 7 karakter, tetapi bukan kredensial login.
+Respons sukses berisi JWT pengguna. JWT memuat `agent_id`, `sub` pengguna, dan
+role `owner` atau `employee`. API menolak akun yang dinonaktifkan dan
+memvalidasi status akun saat setiap request. Jangan log password atau token.
 
-Respons sukses:
+Login admin distributor menggunakan `POST /api/admin/login` dengan format
+`email` dan `password` yang sama, tetapi menghasilkan token admin yang tidak
+dapat dipakai pada endpoint agen.
 
-```json
-{
-  "success": true,
-  "message": "login success",
-  "data": {
-    "token": "<JWT>"
-  }
-}
-```
+Sistem agen harus menyimpan JWT di server-side session per pengguna, bukan di
+browser atau cache global yang dipakai bersama owner dan pegawai.
 
-Token berlaku selama jumlah jam pada `JWT_EXPIRE_HOURS` (default 24 jam).
-Login ulang jika token kedaluwarsa. Jangan log response login atau token.
+## 2. Produk, operator, saldo, dan laporan
 
-## 2. Daftar produk dan saldo
-
-Semua endpoint agent berikut memerlukan JWT:
+Semua endpoint agent berikut memerlukan JWT owner atau pegawai:
 
 | Method | Endpoint | Keterangan |
 |---|---|---|
-| `GET` | `/api/products` | Daftar produk aktif |
+| `GET` | `/api/products?operator=TELKOMSEL` | Produk aktif; operator dipilih manual |
 | `GET` | `/api/products/:id` | Detail produk aktif |
-| `GET` | `/api/balance` | Saldo agent yang terautentikasi |
-| `GET` | `/api/history/transactions?limit=20&offset=0` | Riwayat transaksi agent |
-| `GET` | `/api/history/deposits?limit=20&offset=0` | Riwayat deposit agent |
-| `PATCH` | `/api/pin` | Mengganti PIN transaksi dengan verifikasi PIN lama |
+| `GET` | `/api/pricing` | Keuntungan default per produk |
+| `PATCH` | `/api/pricing/:id` | Mengubah keuntungan default (owner saja) |
+| `GET` | `/api/balance` | Saldo agen |
+| `GET` | `/api/dashboard/summary` | Ringkasan KPI hari ini |
+| `GET` | `/api/history/transactions` | Riwayat dengan filter/pagination |
+| `GET` | `/api/history/deposits` | Deposit yang disetujui |
+| `POST` | `/api/deposits` | Membuat permintaan deposit |
+| `GET` | `/api/history/deposit-requests` | Riwayat permintaan deposit |
+| `PATCH` | `/api/pin` | Mengganti PIN transaksi (owner saja) |
+| `PATCH` | `/api/password` | Mengganti password owner (owner saja) |
+| `POST` | `/api/topup` | Membuat transaksi pulsa |
 
-Daftar produk menampilkan nominal pulsa dan harga jual default (`harga_jual`).
-Harga modal distributor (`price`) hanya tersedia pada endpoint admin.
+Operator dipilih manual dari katalog produk. Sistem tidak menebak atau
+memvalidasi operator berdasarkan prefix nomor tujuan.
 
-Contoh memasang token:
+Filter `GET /api/history/transactions`:
+
+- `date_from`, `date_to`: format `YYYY-MM-DD`, keduanya inklusif.
+- `status`: `PENDING`, `SUCCESS`, `FAILED`, atau `REFUNDED`.
+- `operator`: kode operator sesuai katalog, misalnya `TELKOMSEL`.
+- `limit` (default 20, maksimum 100) dan `offset` (default 0).
+
+Tanggal mengikuti zona waktu server aplikasi. `GET /api/dashboard/summary`
+mengembalikan saldo saat ini, jumlah semua transaksi hari ini, jumlah
+transaksi sukses, total keuntungan, total saldo terpotong, serta operator
+terbanyak. Keuntungan, saldo terpotong, dan operator terbanyak hanya dihitung
+dari transaksi `SUCCESS`; hari mengikuti zona waktu server.
+
+### Keuntungan default per produk
+
+Default keuntungan untuk produk yang belum dikonfigurasi adalah Rp500. Owner
+dapat mengubah default melalui:
 
 ```http
-Authorization: Bearer <JWT>
+PATCH /api/pricing/TSEL10
+Authorization: Bearer OWNER_JWT
+Content-Type: application/json
 ```
 
-Ganti PIN dari dashboard pemilik dengan `PATCH /api/pin`:
+```json
+{
+  "default_profit": 1000
+}
+```
+
+Nilai default maupun keuntungan yang dikirim saat top-up harus Rp500–Rp2.000.
+Pegawai yang memanggil endpoint ini akan menerima `403 Forbidden`.
+
+### Mengganti PIN dan password
+
+PIN harus enam angka dan API menyimpan hash bcrypt. Penggantian PIN memerlukan
+PIN lama:
+
+```http
+PATCH /api/pin
+Authorization: Bearer OWNER_JWT
+Content-Type: application/json
+```
 
 ```json
 {
@@ -93,43 +110,46 @@ Ganti PIN dari dashboard pemilik dengan `PATCH /api/pin`:
 }
 ```
 
-PIN harus enam angka. API menyimpan hash bcrypt, bukan PIN teks biasa. Endpoint
-ini mewajibkan PIN lama sehingga JWT saja tidak cukup untuk mengambil alih PIN.
-Lima PIN salah berturut-turut mengunci verifikasi selama 15 menit; reset oleh
-superadmin menghapus lockout.
-Jika PIN belum pernah diatur atau pemilik lupa PIN, superadmin dapat
-memprovisikan ulang melalui `PATCH /api/admin/agents/:id/pin`.
+Lima PIN salah berturut-turut mengunci verifikasi selama 15 menit. Jika PIN
+belum diatur atau owner lupa, superadmin dapat mengatur ulang melalui
+`PATCH /api/admin/agents/:id/pin`.
+
+Owner mengganti password login miliknya sendiri melalui `PATCH /api/password`:
+
+```json
+{
+  "current_password": "password-lama",
+  "new_password": "password-baru"
+}
+```
+
+Password minimal enam karakter. Pegawai tidak dapat memakai endpoint
+perubahan PIN, password, atau keuntungan default.
 
 ## 3. Membuat transaksi
 
 `POST /api/topup`
 
-Header:
-
 ```http
-Authorization: Bearer <JWT>
+Authorization: Bearer USER_JWT
 Content-Type: application/json
 ```
-
-Body:
 
 ```json
 {
   "product_id": "TSEL10",
   "customer_no": "081234567890",
-  "keuntungan": 400,
+  "keuntungan": 1200,
   "pin": "123456"
 }
 ```
 
-Backend sistem agen mendapatkan PIN dari form dashboard karyawan, lalu
-mengirimnya ke API. Password API tidak disertakan dalam request transaksi.
-`keuntungan` bersifat opsional. Jika tidak dikirim, API memakai keuntungan
-default `harga_jual - price`. Jika dikirim, nilainya adalah keuntungan total
-di atas modal dan harus sama atau lebih besar dari keuntungan default. Harga
-yang didebit dari saldo agen adalah `price + keuntungan`.
+`keuntungan` opsional. Jika tidak dikirim, API memakai keuntungan default
+untuk produk tersebut, atau Rp500 jika belum diatur. `price` adalah modal
+distributor, sedangkan saldo agen didebit sebesar `harga_jual`. Harga konsumen
+adalah `harga_jual + keuntungan`.
 
-Respons diterima untuk diproses:
+Respons `202 Accepted`:
 
 ```json
 {
@@ -139,89 +159,79 @@ Respons diterima untuk diproses:
     "tx_id": "<transaction-id>",
     "status": "PENDING",
     "nominal": 10000,
-    "sell_price": 10400
+    "sell_price": 11000,
+    "keuntungan": 1200,
+    "customer_price": 12200
   }
 }
 ```
 
-API menggunakan `202 Accepted`: transaksi belum tentu sudah selesai saat
-respons dikembalikan. Sistem agen dapat memeriksa status melalui
-`GET /api/history/transactions`. Jika worker antrean penuh atau aplikasi restart,
-transaksi pending tetap ada di database dan akan diambil ulang oleh worker.
+Transaksi belum tentu selesai saat respons diterima. Periksa status melalui
+`GET /api/history/transactions`. Jika worker antrean penuh atau aplikasi
+restart, transaksi pending tersimpan dan akan diambil ulang oleh worker.
 
-## 4. Contoh integrasi Laravel (opsional)
+## 4. Permintaan deposit
 
-Simpan kredensial di `.env` Laravel (jangan commit file tersebut):
+Setelah transfer manual, owner atau pegawai mengajukan deposit:
 
-```dotenv
-PULSA_API_BASE_URL=https://api.example.com
-PULSA_API_EMAIL=agent01@example.invalid
-PULSA_API_PASSWORD=ganti-dengan-password-api
+`POST /api/deposits`
+
+```json
+{
+  "amount": 100000,
+  "reference": "REF-TRANSFER-001"
+}
 ```
 
-Contoh pemanggilan backend secara ringkas:
+Permintaan berstatus `PENDING` dan belum menambah saldo. Admin memeriksa
+transfer melalui:
 
-```php
-use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Http;
+| Method | Endpoint | Keterangan |
+|---|---|---|
+| `GET` | `/api/admin/deposit-requests?status=PENDING` | Daftar permintaan |
+| `POST` | `/api/admin/deposit-requests/:id/approve` | Setujui dan tambahkan saldo |
+| `POST` | `/api/admin/deposit-requests/:id/reject` | Tolak tanpa mengubah saldo |
 
-$token = Cache::remember('pulsa_api_token', now()->addHours(23), function () {
-    $response = Http::asJson()->post(
-        config('services.pulsa.base_url').'/api/agent/login',
-        [
-            'email' => config('services.pulsa.email'),
-            'password' => config('services.pulsa.password'),
-        ]
-    )->throw();
+Request approve/reject menerima JSON `{"note":"..."}`. Keputusan hanya dapat
+dilakukan sekali; permintaan yang sudah diputus menghasilkan `409 Conflict`.
+`reference` wajib diisi dan unik per agen agar transfer yang sama tidak dapat
+diajukan dua kali.
+Riwayat permintaan ada di `/api/history/deposit-requests`; deposit yang telah
+disetujui ada di `/api/history/deposits`.
 
-    return $response->json('data.token');
-});
+## 5. Pengelolaan akun agen oleh admin distributor
 
-$response = Http::withToken($token)->asJson()->post(
-    config('services.pulsa.base_url').'/api/topup',
-    [
-        'product_id' => $request->string('product_id')->toString(),
-        'customer_no' => $request->string('customer_no')->toString(),
-        'pin' => $request->string('pin')->toString(),
-    ]
-)->throw();
-```
-
-Konfigurasikan `services.pulsa` untuk membaca tiga nilai environment di atas,
-misalnya di `config/services.php`:
-
-```php
-'pulsa' => [
-    'base_url' => env('PULSA_API_BASE_URL'),
-    'email' => env('PULSA_API_EMAIL'),
-    'password' => env('PULSA_API_PASSWORD'),
-],
-```
-
-Validasi PIN di backend agen untuk pengalaman pengguna, tetapi validasi dan
-verifikasi otoritatif tetap dilakukan API Golang. Jangan menyimpan PIN dalam
-log, session yang berumur panjang, atau tabel transaksi.
-
-Contoh cache di atas memakai masa cache lebih pendek daripada masa JWT default.
-Untuk integrasi produksi, tangani respons `401` dengan menghapus token cache,
-login ulang, lalu ulangi request secara aman. Jangan mengulang transaksi secara
-buta jika request timeout setelah diterima server; cek riwayat/status dahulu.
-
-## 5. Endpoint admin
-
-Endpoint berikut memerlukan JWT admin:
+Semua endpoint berikut memerlukan JWT admin:
 
 | Method | Endpoint |
 |---|---|
-| `POST` | `/api/admin/login` |
-| `POST` | `/api/admin/deposit` |
+| `POST` | `/api/admin/agents` |
 | `GET` | `/api/admin/agents` |
+| `GET` | `/api/admin/agents/:id/employees` |
+| `POST` | `/api/admin/agents/:id/employees` |
+| `PATCH` | `/api/admin/agents/:id/employees/:employee_id` |
 | `GET` | `/api/admin/transactions` |
+| `PATCH` | `/api/admin/agents/:id/pin` (khusus superadmin) |
+| `POST` | `/api/admin/agents/:id/callback-secret` (khusus superadmin) |
+
+`POST /api/admin/agents` membuat akun owner dan menerima `username`, `email`,
+`password`, `name`, `phone`, `address`, `bank_name`, serta
+`bank_account_number`. `POST /api/admin/agents/:id/employees` menerima
+`username`, `email`, `name`, dan `password`. `PATCH` akun pegawai menerima
+`is_active` untuk mengaktifkan atau menonaktifkannya. Akun pegawai yang
+dinonaktifkan langsung ditolak pada request API berikutnya.
+
+Data alamat dan rekening bank hanya tersedia bagi admin distributor melalui
+pengelolaan profil agen.
+
+Endpoint produk admin:
+
+| Method | Endpoint |
+|---|---|
 | `GET` | `/api/admin/products` |
 | `POST` | `/api/admin/products` |
 | `PATCH` | `/api/admin/products/:id` |
 | `DELETE` | `/api/admin/products/:id` |
-| `PATCH` | `/api/admin/agents/:id/pin` (khusus superadmin) |
 
 ## Catatan status simulasi
 

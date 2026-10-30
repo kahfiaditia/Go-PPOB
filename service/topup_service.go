@@ -21,7 +21,7 @@ var (
 	ErrPINNotSet           = errors.New("transaction PIN is not set")
 	ErrPINIncorrect        = errors.New("transaction PIN is incorrect")
 	ErrPINLocked           = errors.New("transaction PIN is temporarily locked")
-	ErrProfitBelowDefault  = errors.New("transaction profit cannot be lower than the product default")
+	ErrInvalidProfit       = errors.New("agent profit must be between 500 and 2000")
 	ErrInvalidProductPrice = errors.New("invalid product price configuration")
 )
 
@@ -29,14 +29,19 @@ type TopupService struct {
 	db          *sql.DB
 	agentRepo   *repository.AgentRepository
 	productRepo *repository.ProductRepository
+	pricingRepo *repository.AgentProductPricingRepository
 	txRepo      *repository.TransactionRepository
 	ledgerRepo  *repository.LedgerRepository
 	cbService   *CallbackService
 }
 
 func NewTopupService(db *sql.DB, ar *repository.AgentRepository, pr *repository.ProductRepository,
-	tr *repository.TransactionRepository, lr *repository.LedgerRepository, cb *CallbackService) *TopupService {
-	return &TopupService{db: db, agentRepo: ar, productRepo: pr, txRepo: tr, ledgerRepo: lr, cbService: cb}
+	ppr *repository.AgentProductPricingRepository, tr *repository.TransactionRepository,
+	lr *repository.LedgerRepository, cb *CallbackService) *TopupService {
+	return &TopupService{
+		db: db, agentRepo: ar, productRepo: pr, pricingRepo: ppr,
+		txRepo: tr, ledgerRepo: lr, cbService: cb,
+	}
 }
 
 // CreatePending — dipanggil handler (cepat), hanya insert ke DB
@@ -70,7 +75,11 @@ func (s *TopupService) CreatePending(ctx context.Context, agentID int64, product
 		}
 	}
 
-	sellPrice, profit, err := calculateTopupPrice(prod.Price, prod.HargaJual, requestedProfit)
+	defaultProfit, err := s.pricingRepo.GetDefaultProfit(ctx, agentID, productID)
+	if err != nil {
+		return nil, err
+	}
+	sellPrice, profit, err := calculateTopupPrice(prod.HargaJual, defaultProfit, requestedProfit)
 	if err != nil {
 		return nil, err
 	}
@@ -85,14 +94,15 @@ func (s *TopupService) CreatePending(ctx context.Context, agentID int64, product
 	defer tx.Rollback()
 
 	t := &model.Transaction{
-		ID:         uuid.NewString(),
-		AgentID:    agentID,
-		ProductID:  productID,
-		CustomerNo: customerNo,
-		Amount:     prod.Nominal,
-		SellPrice:  sellPrice,
-		Markup:     profit,
-		Status:     "PENDING",
+		ID:            uuid.NewString(),
+		AgentID:       agentID,
+		ProductID:     productID,
+		CustomerNo:    customerNo,
+		Amount:        prod.Nominal,
+		SellPrice:     sellPrice,
+		Markup:        profit,
+		CustomerPrice: sellPrice + profit,
+		Status:        "PENDING",
 	}
 	if err := s.txRepo.Create(ctx, tx, t); err != nil {
 		return nil, err
@@ -103,18 +113,20 @@ func (s *TopupService) CreatePending(ctx context.Context, agentID int64, product
 	return t, nil
 }
 
-func calculateTopupPrice(cost, defaultSellPrice float64, requestedProfit *float64) (sellPrice, profit float64, err error) {
-	if cost <= 0 || defaultSellPrice < cost {
+func calculateTopupPrice(distributorSellPrice, defaultProfit float64, requestedProfit *float64) (sellPrice, profit float64, err error) {
+	if distributorSellPrice <= 0 {
 		return 0, 0, ErrInvalidProductPrice
 	}
-	defaultProfit := defaultSellPrice - cost
+	if defaultProfit < model.MinAgentProfit || defaultProfit > model.MaxAgentProfit {
+		return 0, 0, ErrInvalidProfit
+	}
 	if requestedProfit == nil {
-		return defaultSellPrice, defaultProfit, nil
+		return distributorSellPrice, defaultProfit, nil
 	}
-	if *requestedProfit < defaultProfit {
-		return 0, 0, ErrProfitBelowDefault
+	if *requestedProfit < model.MinAgentProfit || *requestedProfit > model.MaxAgentProfit {
+		return 0, 0, ErrInvalidProfit
 	}
-	return cost + *requestedProfit, *requestedProfit, nil
+	return distributorSellPrice, *requestedProfit, nil
 }
 
 func (s *TopupService) PendingTransactionIDs(ctx context.Context, limit int) ([]string, error) {

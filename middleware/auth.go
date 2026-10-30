@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"context"
 	"encoding/json"
 	"strconv"
 	"strings"
@@ -11,8 +12,12 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
+type AgentSessionVerifier interface {
+	ValidateAgentSession(ctx context.Context, userID, agentID int64, role string) (bool, error)
+}
+
 // AuthAgent — untuk endpoint agent
-func AuthAgent(secret []byte) gin.HandlerFunc {
+func AuthAgent(secret []byte, verifier AgentSessionVerifier) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		tokenStr := extractToken(c)
 		if tokenStr == "" {
@@ -29,19 +34,51 @@ func AuthAgent(secret []byte) gin.HandlerFunc {
 			return
 		}
 
-		if role, _ := claims["role"].(string); role != "agent" {
+		role, _ := claims["role"].(string)
+		if role != "owner" && role != "employee" {
 			util.Forbidden(c, "agent access only")
 			c.Abort()
 			return
 		}
 
-		id, ok := subjectID(claims)
+		userID, ok := subjectID(claims)
 		if !ok {
 			util.Unauthorized(c, "invalid token claims")
 			c.Abort()
 			return
 		}
-		c.Set("agent_id", id)
+		agentID, ok := claimID(claims, "agent_id")
+		if !ok {
+			util.Unauthorized(c, "invalid token claims")
+			c.Abort()
+			return
+		}
+		active, err := verifier.ValidateAgentSession(c.Request.Context(), userID, agentID, role)
+		if err != nil {
+			util.Log.Errorf("[AUTH] agent session validation failed agent=%d user=%d: %v", agentID, userID, err)
+			util.InternalError(c, "failed to validate agent session")
+			c.Abort()
+			return
+		}
+		if !active {
+			util.Unauthorized(c, "agent account is inactive or invalid")
+			c.Abort()
+			return
+		}
+		c.Set("agent_id", agentID)
+		c.Set("agent_user_id", userID)
+		c.Set("agent_role", role)
+		c.Next()
+	}
+}
+
+func RequireAgentRole(role string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if c.GetString("agent_role") != role {
+			util.Forbidden(c, role+" access only")
+			c.Abort()
+			return
+		}
 		c.Next()
 	}
 }
@@ -114,7 +151,15 @@ func parseToken(tokenStr string, secret []byte) (jwt.MapClaims, error) {
 }
 
 func subjectID(claims jwt.MapClaims) (int64, bool) {
-	switch sub := claims["sub"].(type) {
+	return numericID(claims["sub"])
+}
+
+func claimID(claims jwt.MapClaims, name string) (int64, bool) {
+	return numericID(claims[name])
+}
+
+func numericID(value interface{}) (int64, bool) {
+	switch sub := value.(type) {
 	case float64:
 		id := int64(sub)
 		if id <= 0 || float64(id) != sub {
