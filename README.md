@@ -25,7 +25,7 @@ go run ./cmd/seed
 go run .
 ```
 
-Seed demo membuat akun `admin` dan `agent01` sampai `agent60`. Password dan PIN
+Seed demo membuat akun `admin` dan `agent01` sampai `agent10`. Password dan PIN
 diambil dari `.env`; ganti nilainya sebelum membagikan atau men-deploy aplikasi.
 Jangan commit file `.env`.
 

@@ -39,17 +39,9 @@
    memakai `CREATE TABLE IF NOT EXISTS`, sehingga tidak mengubah tabel yang
    sudah ada.
 
-   Untuk database yang masih memakai skema legacy sebelum akun pegawai dan
-   permintaan deposit, backup database terlebih dahulu, lalu jalankan migrasi
-   upgrade satu kali:
-   ```bash
-   mysqldump -u root -p go_pulsa_db > backup-go-pulsa.sql
-   mysql -u root -p < database/migration_upgrade_legacy.sql
-   ```
-   Migrasi upgrade mengisi email kosong dari username dengan domain
-   `example.invalid` agar akun lama tetap dapat login melalui email. Sesuaikan
-   email tersebut setelah upgrade. Skrip ini ditujukan untuk skema legacy
-   proyek; jangan jalankan ulang atau pada database dengan skema berbeda.
+   Langkah ini untuk instalasi baru pada database kosong. Proyek tidak
+   menyediakan migrasi upgrade untuk skema versi lama; database lama harus
+   dibackup dan dipindahkan secara terencana sebelum memakai skema baru.
 
 4. **Unduh dependency dan buat data demo**
    ```bash
@@ -57,7 +49,7 @@
    go run ./cmd/seed
    ```
 
-   Seed membuat akun admin serta 60 akun owner (`agent01`–`agent60`) dan data
+   Seed membuat akun admin serta 10 akun owner (`agent01`–`agent10`) dan data
    produk contoh. Password dan PIN demo dibaca dari `SEED_ADMIN_PASSWORD`,
    `SEED_AGENT_PASSWORD`, dan `SEED_AGENT_PIN` pada `.env`. Seed tidak mengganti
    password akun yang sudah ada. Harga produk demo mengatur `price` Rp500–Rp1.000

@@ -46,7 +46,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// 60 Agents
+	// 10 demo agents
 	agentHash, err := bcrypt.GenerateFromPassword([]byte(agentPassword), bcrypt.DefaultCost)
 	if err != nil {
 		log.Fatal("failed to hash seed agent password: ", err)
@@ -55,7 +55,7 @@ func main() {
 	if err != nil {
 		log.Fatal("failed to hash seed agent PIN: ", err)
 	}
-	for i := 1; i <= 60; i++ {
+	for i := 1; i <= 10; i++ {
 		username := fmt.Sprintf("agent%02d", i)
 		email := fmt.Sprintf("agent%02d@example.invalid", i)
 		_, err := db.Exec(`INSERT INTO agents (username, email, password_hash, pin_hash, name, balance, callback_url)
